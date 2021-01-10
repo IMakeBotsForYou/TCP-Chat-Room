@@ -1,2 +1,2 @@
-# TCP-Chat-Room
-This is a chatroom built on TCP sockets in python.
+This is a TCP based socket chat room made in python! woo
+
