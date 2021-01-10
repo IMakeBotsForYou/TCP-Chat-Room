@@ -47,11 +47,8 @@ def receive():
 
             else:
                 print(msg)
-                if search("has joined the chat!$", msg):
-                    temp_name = search("(.+) has joined the chat!$", msg).groups(0)[0]
-                    msg = encode(temp_name, KEY) + " has joined the chat!"
 
-                elif search("Welcome", msg):
+                if search("Welcome", msg):
                     name = search(r"^Welcome (.+)! If you ever want to quit, type \{quit\} to exit.$", msg).groups(0)[0]
                     print(f'NAME: {encode(name, KEY)}')
                     # typing_my_name = False
@@ -81,7 +78,7 @@ def send(event=None):  # event is passed by binders.
 
 def on_closing(event=None):
     """This function is to be called when the window is closed."""
-    my_msg.set("{quit}")
+    my_msg.set("quit()")
     send()
 
 
