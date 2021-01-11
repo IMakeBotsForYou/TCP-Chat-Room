@@ -14,7 +14,7 @@ PORT = input('Enter port: ')
 
 if not HOST:
     # HOST = "213.57.158.173"
-    HOST = "10.0.0.24"
+    HOST = "109.67.94.77"
 if not PORT:
     PORT = 45000
     # PORT = 21567
