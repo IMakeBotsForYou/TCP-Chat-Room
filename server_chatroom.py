@@ -13,18 +13,41 @@ def accept_incoming_connections():
         Thread(target=handle_client, args=(client,)).start()
 
 
+COMMAND_PREFIX = "/"
+
+
+def handle_command(msg, client):
+    args = msg.strip().split(" ")
+    print(args)
+    command = args[0][1:]
+    if command == "nick" or command == "nickname":
+        if len(args) > 1:
+            print(f'|{"".join(args[1:])[1:]}|')
+            prev_name = clients[client]
+            clients[client] = "".join(args[1:])[1:]
+            broadcast("{System} " + f'{prev_name} changed to {clients[client]}'.encode())
+            return "{System} Nickname Updated.".encode()
+        else:
+            return ("{System} " + "Invalid Nickname").encode()
+
+    # Currently online users
+    if command == "current" or command == "online":
+        return ("{System} " + str(len(clients)) + ' users online, ' + ' | '.join(clients.values())).encode()
+    return "Invalid Command".encode()
+
+
 def handle_client(client):  # Takes client socket as argument.
     """Handles a single client connection."""
 
     try:
         name = client.recv(BUFSIZ).decode()
     except ConnectionResetError:  # 10054
-        pass
+        print("error")
     else:
         connection_working = True
-        welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
+        welcome = "{System} " + 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
         client.send(welcome.encode())
-        msg = "%s has joined the chat!" % name
+        msg = "{System} " + "%s has joined the chat!" % name
         broadcast(msg.encode())
         clients[client] = name
 
@@ -33,16 +56,20 @@ def handle_client(client):  # Takes client socket as argument.
                 msg = client.recv(BUFSIZ)
             except ConnectionResetError:  # 10054
                 connection_working = False
-            if connection_working and msg != "{quit}".encode():
-                broadcast(msg, name + ": ")
+            if connection_working and msg != "quit()".encode():
+                if chr(msg[0]).encode() == COMMAND_PREFIX.encode():
+                    print(f'Command executed by {clients[client]}, {str(msg)}')
+                    client.send(handle_command(msg.decode(), client))
+                else:
+                    broadcast(msg, clients[client] + ": ")
             else:
                 try:
-                    client.send("{quit}".encode())
+                    client.send("quit()".encode())
                 except ConnectionResetError:  # 10054
                     connection_working = False
                 client.close()
                 del clients[client]
-                broadcast(("%s has left the chat." % name).encode())
+                broadcast(("{System} " + "%s has left the chat." % name).encode())
                 break
 
 
@@ -56,10 +83,8 @@ def broadcast(msg, prefix=""):  # prefix is for name identification.
             pass
 
 
-
-
 HOST = ""
-PORT = 21567
+PORT = 45000
 BUFSIZ = 1024
 ADDR = (HOST, PORT)
 
