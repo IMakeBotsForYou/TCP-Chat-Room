@@ -47,7 +47,7 @@ def handle_message(msg):
         # f'{prev_name} changed to {clients[client]}'
         elif search("changed to", msg):
             found_nicks = [encode(x, KEY) for x in list(search(r"^\{System\} (.+) changed to (.+)", msg).groups())]
-            msg = "{System}" + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
+            msg = "{System} " + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
 
         # Users Online
         elif search(r"\d{1,} users online", msg):
