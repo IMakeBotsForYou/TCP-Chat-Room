@@ -36,6 +36,40 @@ def encode(txt, key):
 name = ""
 
 
+def handle_message(msg):
+    # Welcome message
+    if search("^\{System\}", msg):
+        if search("has joined the chat!$", msg):
+            temp_name = search("{System} (.+) has joined the chat!$", msg).groups(0)[0]
+            msg = encode(temp_name, KEY) + " has joined the chat!"
+
+        # Nickname
+        # f'{prev_name} changed to {clients[client]}'
+        elif search("changed to", msg):
+            found_nicks = [encode(x, KEY) for x in list(search(r"^\{System\} (.+) changed to (.+)", msg).groups())]
+            msg = "{System}" + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
+
+        # Users Online
+        elif search(r"\d{1,} users online", msg):
+            before = msg[:msg.find("online")+len("online")] + " "
+            after = " | ".join([encode(x, KEY) for x in msg[len(before)+1:].split(" | ")])
+            msg = before + after
+
+        # Self-Welcome
+        elif search("Welcome", msg):
+            name = search(r"Welcome (.+)! If you ever want to quit, type \{quit\} to exit.$", msg).groups(0)[0]
+            print(f'NAME: {encode(name, KEY)}')
+            # typing_my_name = False
+            msg = f'Welcome {encode(name, KEY)}! If you ever want to quit, type {quit} to exit'
+
+        # On user leave
+        elif search("left the chat", msg):
+            name = search(r"^\{System\} (.+) left the chat$", msg).groups(0)[0]
+            print(f'LEFT CHAT: {encode(name, KEY)}')
+            # typing_my_name = False
+            msg = "{System} " + f'{encode(name, KEY)} has left the chat.'
+    return msg
+
 def receive():
     """Handles receiving of messages."""
     # global name
@@ -44,23 +78,11 @@ def receive():
             msg_list.see("end")
             msg = client_socket.recv(BUFSIZ).decode("utf8")
             n_len = msg.find(":")
-            if not n_len == -1:
+            if not n_len == -1 and not search(r"^\{System\}", msg):
                 msg = encode(msg[:n_len], KEY) + ": " + \
                       encode(msg[n_len+2:], KEY)
-
             else:
-                print(msg)
-                if search("has joined the chat!$", msg):
-                    temp_name = search("(.+) has joined the chat!$", msg).groups(0)[0]
-                    msg = encode(temp_name, KEY) + " has joined the chat!"
-                elif search("Nicknamed changed to - ", msg):
-                    print("Nickname message")
-                    msg = sub(r"\|.+\|" , findall(r"\|.+\|", msg)[0], msg, 1)
-                elif search("Welcome", msg):
-                    name = search(r"^Welcome (.+)! If you ever want to quit, type \{quit\} to exit.$", msg).groups(0)[0]
-                    print(f'NAME: {encode(name, KEY)}')
-                    # typing_my_name = False
-                    msg = f'Welcome {encode(name, KEY)}! If you ever want to quit, type {quit} to exit'
+                msg = handle_message(msg)
             msg_list.insert(tkinter.END, msg)
         except OSError:  # Possibly client has left the chat.
             break
