@@ -23,12 +23,12 @@ else:
 
 
 def encode(txt, key):
-    '''
+    """
     Encoding / Decoding txt with the chatroom KEY.
 
     :parameter txt > string
     :parameter key > int
-    '''
+    """
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
@@ -38,37 +38,37 @@ name = ""
 
 def handle_message(msg):
     # Welcome message
-    if search("^\{System\}", msg):
+    if search(r"^{System}", msg):
         if search("has joined the chat!$", msg):
-            temp_name = search("{System} (.+) has joined the chat!$", msg).groups(0)[0]
+            temp_name = search("{System} (.+) has joined the chat!$", msg).groups()[0]
             msg = encode(temp_name, KEY) + " has joined the chat!"
 
         # Nickname
-        # f'{prev_name} changed to {clients[client]}'
         elif search("changed to", msg):
-            found_nicks = [encode(x, KEY) for x in list(search(r"^\{System\} (.+) changed to (.+)", msg).groups())]
+            found_nicks = [encode(x, KEY) for x in list(search(r"^{System} (.+) changed to (.+)", msg).groups())]
             msg = "{System} " + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
 
         # Users Online
-        elif search(r"\d{1,} users online", msg):
-            before = msg[:msg.find("online")+len("online")] + " "
-            after = " | ".join([encode(x, KEY) for x in msg[len(before)+1:].split(" | ")])
+        elif search(r"\d+ users online", msg):
+            before = msg[:msg.find("online") + len("online")] + " "
+            after = " | ".join([encode(x, KEY) for x in msg[len(before) + 1:].split(" | ")])
             msg = before + after
 
         # Self-Welcome
         elif search("Welcome", msg):
-            name = search(r"Welcome (.+)! If you ever want to quit, type \{quit\} to exit.$", msg).groups(0)[0]
-            print(f'NAME: {encode(name, KEY)}')
+            user_name = search(r"Welcome (.+)! If you ever want to quit, type {quit} to exit.$", msg).groups()[0]
+            print(f'NAME: {encode(user_name, KEY)}')
             # typing_my_name = False
-            msg = f'Welcome {encode(name, KEY)}! If you ever want to quit, type {quit} to exit'
+            msg = f'Welcome {encode(user_name, KEY)}! If you ever want to quit, type {quit} to exit'
 
         # On user leave
         elif search("left the chat", msg):
-            name = search(r"^\{System\} (.+) has left the chat.$", msg).groups(0)[0]
-            print(f'LEFT CHAT: {encode(name, KEY)}')
+            user_name = search(r'^{System} (.+) has left the chat.$', msg).groups()[0]
+            print(f'LEFT CHAT: {encode(user_name, KEY)}')
             # typing_my_name = False
-            msg = "{System} " + f'{encode(name, KEY)} has left the chat.'
+            msg = "{System} " + f'{encode(user_name, KEY)} has left the chat.'
     return msg
+
 
 def receive():
     """Handles receiving of messages."""
@@ -76,11 +76,11 @@ def receive():
     while True:
         try:
             msg_list.see("end")
-            msg = client_socket.recv(BUFSIZ).decode("utf8")
+            msg = client_socket.recv(BUFFER_SIZE).decode("utf8")
             n_len = msg.find(":")
-            if not n_len == -1 and not search(r"^\{System\}", msg):
+            if not n_len == -1 and not search(r"^{System}", msg):
                 msg = encode(msg[:n_len], KEY) + ": " + \
-                      encode(msg[n_len+2:], KEY)
+                      encode(msg[n_len + 2:], KEY)
             else:
                 msg = handle_message(msg)
             msg_list.insert(tkinter.END, msg)
@@ -92,18 +92,21 @@ KEY = 5
 
 
 def send(event=None):  # event is passed by binders.
-    """Handles sending of messages."""
+    """Handles sending of messages.
+    :type event: object
+    """
     get = my_msg.get()
     if get == "":
         return
     msg = get
     args = msg.split(" ")
-    if not get == "quit()" and not get[0] == "/":  # if not quit, encrypt.
+    if not get == "quit()" and not get[0] == "/":
         msg = encode(get, KEY)
-# to future me, there is 1 space before the print, fix it :D
-    if args[0] == "/nick" or args[0] == "/nickname":
-        msg = '/nick ' + encode(msg[msg.find(" "):], KEY)
-        msg = ' '.join(list(filter(None, msg.split(" ")))) # remove extra spaces
+    elif get[0] == "/":
+        print("Command registered", args[0][1:])
+        print(args[1:])
+        msg = args[0] + " " + encode(' '.join(args[1:]), KEY)
+        msg = ' '.join(list(filter(None, msg.split(" "))))  # remove extra spaces
     my_msg.set("")  # Clears input field.
     client_socket.send(bytes(msg, "utf8"))
     if msg == "quit()":
@@ -142,7 +145,7 @@ top.protocol("WM_DELETE_WINDOW", on_closing)
 HOST = ""
 PORT = 0
 
-BUFSIZ = 1024
+BUFFER_SIZE = 1024
 
 client_socket = socket(AF_INET, SOCK_STREAM)
 client_socket.connect(ADDR)
