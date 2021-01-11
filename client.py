@@ -13,10 +13,11 @@ HOST = input('Enter host: ')
 PORT = input('Enter port: ')
 
 if not HOST:
-    HOST = "213.57.158.173"
-
+    # HOST = "213.57.158.173"
+    HOST = "10.0.0.24"
 if not PORT:
-    PORT = 21567
+    PORT = 45000
+    # PORT = 21567
 else:
     PORT = int(PORT)
 
@@ -30,6 +31,7 @@ def encode(txt, key):
     '''
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
+
 # Will be used later
 name = ""
 
@@ -39,6 +41,7 @@ def receive():
     # global name
     while True:
         try:
+            msg_list.see("end")
             msg = client_socket.recv(BUFSIZ).decode("utf8")
             n_len = msg.find(":")
             if not n_len == -1:
@@ -47,8 +50,13 @@ def receive():
 
             else:
                 print(msg)
-
-                if search("Welcome", msg):
+                if search("has joined the chat!$", msg):
+                    temp_name = search("(.+) has joined the chat!$", msg).groups(0)[0]
+                    msg = encode(temp_name, KEY) + " has joined the chat!"
+                elif search("Nicknamed changed to - ", msg):
+                    print("Nickname message")
+                    msg = sub(r"\|.+\|" , findall(r"\|.+\|", msg)[0], msg, 1)
+                elif search("Welcome", msg):
                     name = search(r"^Welcome (.+)! If you ever want to quit, type \{quit\} to exit.$", msg).groups(0)[0]
                     print(f'NAME: {encode(name, KEY)}')
                     # typing_my_name = False
@@ -65,10 +73,14 @@ def send(event=None):  # event is passed by binders.
     """Handles sending of messages."""
     get = my_msg.get()
 
-    msg = ""
-    if not get == "quit()":  # if not quit, encrypt.
-        msg = ''.join([chr(ord(a) ^ KEY) for a in get])
-
+    msg = get
+    args = msg.split(" ")
+    if not get == "quit()" and not get[0] == "/":  # if not quit, encrypt.
+        msg = encode(get, KEY)
+# to future me, there is 1 space before the print, fix it :D
+    if args[0] == "/nick" or args[0] == "/nickname":
+        msg = '/nick ' + encode(msg[msg.find(" "):], KEY)
+        msg = ' '.join(list(filter(None, msg.split(" ")))) # remove extra spaces
     my_msg.set("")  # Clears input field.
     client_socket.send(bytes(msg, "utf8"))
     if msg == "quit()":
