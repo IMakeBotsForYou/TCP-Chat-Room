@@ -64,7 +64,7 @@ def handle_message(msg):
 
         # On user leave
         elif search("left the chat", msg):
-            name = search(r"^\{System\} (.+) left the chat$", msg).groups(0)[0]
+            name = search(r"^\{System\} (.+) has left the chat.$", msg).groups(0)[0]
             print(f'LEFT CHAT: {encode(name, KEY)}')
             # typing_my_name = False
             msg = "{System} " + f'{encode(name, KEY)} has left the chat.'
@@ -94,7 +94,8 @@ KEY = 5
 def send(event=None):  # event is passed by binders.
     """Handles sending of messages."""
     get = my_msg.get()
-
+    if get == "":
+        return
     msg = get
     args = msg.split(" ")
     if not get == "quit()" and not get[0] == "/":  # if not quit, encrypt.
