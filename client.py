@@ -34,9 +34,10 @@ def handle_message(msg):
     # Welcome message
     if search(r"^\{System}", msg):
         if search("Direct message to: ", msg):
-            msg = msg[:msg.find(": ")] + ": " + encode(msg[msg.find(": ")+2:], KEY)
+            msg = msg[:28] + encode(msg[28:msg.find("-")-1], KEY) + ": " + \
+                  encode(msg[28 + len(msg[28:msg.find("-")-1])+3:], KEY)
         if search("Message from ", msg):
-            msg = msg[:14+8] + encode(msg[14+8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":")+2:], KEY)
+            msg = msg[:14 + 8] + encode(msg[14 + 8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":") + 2:], KEY)
         if search("Command List", msg):
             msg = "Command List:\n" \
                   "/nick <new name>: Rename Yourself!\n" \
@@ -129,9 +130,7 @@ def on_closing(event=None):
 
 ADDR = (HOST, PORT)
 
-
 top = tkinter.Tk()
-
 
 top.title("Chatter")
 top.attributes("-topmost", True)
