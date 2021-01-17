@@ -36,7 +36,7 @@ def handle_message(msg):
         if search("Direct message to: ", msg):
             msg = msg[:msg.find(": ")] + ": " + encode(msg[msg.find(": ")+2:], KEY)
         if search("Message from ", msg):
-            msg = msg[:14+8] + encode(msg[14+8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":"):], KEY)
+            msg = msg[:14+8] + encode(msg[14+8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":")+2:], KEY)
         if search("Command List", msg):
             msg = "Command List:\n" \
                   "/nick <new name>: Rename Yourself!\n" \
