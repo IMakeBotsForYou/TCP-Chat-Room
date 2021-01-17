@@ -1,7 +1,7 @@
 """Script for Tkinter GUI chat client."""
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
-from re import *
+from re import search, sub
 import tkinter
 
 # Are we typing name or message?
@@ -14,7 +14,7 @@ PORT = input('Enter port: ')
 
 if not HOST:
     # HOST = "213.57.158.173"
-    HOST = "109.67.94.77"
+    HOST = "109.64.93.54"
 if not PORT:
     PORT = 45000
     # PORT = 21567
@@ -23,12 +23,6 @@ else:
 
 
 def encode(txt, key):
-    """
-    Encoding / Decoding txt with the chatroom KEY.
-
-    :parameter txt > string
-    :parameter key > int
-    """
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
@@ -38,8 +32,17 @@ name = ""
 
 def handle_message(msg):
     # Welcome message
-    if search(r"^{System}", msg):
-        if search("has joined the chat!$", msg):
+    if search(r"^\{System}", msg):
+        if search("Direct message to: ", msg):
+            msg = msg[:msg.find(": ")] + ": " + encode(msg[msg.find(": ")+2:], KEY)
+        if search("Message from ", msg):
+            msg[:14+8] + encode(msg[14+8:msg.find(":")-1], KEY) + ": " + encode(msg[msg.find(":")+1:], KEY)
+        if search("Command List", msg):
+            msg = "Command List:\n" \
+                  "/nick <new name>: Rename Yourself!\n" \
+                  "/whisper <name>: whisper to someone\n" \
+                  "/online: show who's online!\n"
+        elif search("has joined the chat!$", msg):
             temp_name = search("{System} (.+) has joined the chat!$", msg).groups()[0]
             msg = encode(temp_name, KEY) + " has joined the chat!"
 
@@ -100,15 +103,19 @@ def send(event=None):  # event is passed by binders.
         return
     msg = get
     args = msg.split(" ")
+
     if not get == "quit()" and not get[0] == "/":
         msg = encode(get, KEY)
+
     elif get[0] == "/":
         print("Command registered", args[0][1:])
         print(args[1:])
-        msg = args[0] + " " + encode(' '.join(args[1:]), KEY)
+        msg = args[0] + " " + encode(' '.join(args[1:]), KEY).replace(encode(" ", KEY), " ")
         msg = ' '.join(list(filter(None, msg.split(" "))))  # remove extra spaces
+
     my_msg.set("")  # Clears input field.
     client_socket.send(bytes(msg, "utf8"))
+
     if msg == "quit()":
         client_socket.close()
         top.quit()
@@ -121,7 +128,11 @@ def on_closing(event=None):
 
 
 ADDR = (HOST, PORT)
+
+
 top = tkinter.Tk()
+
+
 top.title("Chatter")
 top.attributes("-topmost", True)
 messages_frame = tkinter.Frame(top)
@@ -132,6 +143,7 @@ scrollbar = tkinter.Scrollbar(messages_frame)  # To navigate through past messag
 msg_list = tkinter.Listbox(messages_frame, height=15, width=75, yscrollcommand=scrollbar.set)
 scrollbar.pack(side=tkinter.RIGHT, fill=tkinter.Y)
 msg_list.pack(side=tkinter.LEFT, fill=tkinter.BOTH)
+
 msg_list.pack()
 messages_frame.pack()
 
@@ -140,8 +152,8 @@ entry_field.bind("<Return>", send)
 entry_field.pack()
 send_button = tkinter.Button(top, text="Send", command=send)
 send_button.pack()
-
 top.protocol("WM_DELETE_WINDOW", on_closing)
+
 HOST = ""
 PORT = 0
 
