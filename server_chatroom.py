@@ -16,23 +16,37 @@ def accept_incoming_connections():
 COMMAND_PREFIX = "/"
 
 
+def get_client(val):
+    for key, value in clients.items():
+        if val == value:
+            return key
+    return "invalid"
+
 def handle_command(msg, client):
     args = msg.strip().split(" ")
-    print(args)
     command = args[0][1:]
+    print(command)
+    if command == "w" or command == "whisper":
+        recipient_name = args[1]
+        recipient = get_client(recipient_name)
+        print(recipient)
+        if recipient != "invalid":
+            recipient.send(("{System} Message from " + clients[client] + ": " + ' '.join(args[2:])).encode())
+        return f'Direct message to: {recipient_name} - {" ".join(args[2:])}'.encode()
+    if command == "help" or command == "commands":
+        return " Command List".encode()
     if command == "nick" or command == "nickname":
         if len(args) > 1:
-            print(f'|{"".join(args[1:])[1:]}|')
             prev_name = clients[client]
-            clients[client] = "".join(args[1:])[1:]
-            broadcast("{System} " + f'{prev_name} changed to {clients[client]}'.encode())
-            return "{System} Nickname Updated.".encode()
+            clients[client] = "".join(args[1:])
+            broadcast(("{System} " + f'{prev_name} changed to {clients[client]}').encode())
+            return "Nickname Updated.".encode()
         else:
-            return ("{System} " + "Invalid Nickname").encode()
+            return "Must enter a nickname.".encode()
 
     # Currently online users
     if command == "current" or command == "online":
-        return ("{System} " + str(len(clients)) + ' users online, ' + ' | '.join(clients.values())).encode()
+        return (str(len(clients)) + ' users online, ').encode() + ' | '.join(clients.values()).encode()
     return "Invalid Command".encode()
 
 
@@ -59,7 +73,7 @@ def handle_client(client):  # Takes client socket as argument.
             if connection_working and msg != "quit()".encode():
                 if chr(msg[0]).encode() == COMMAND_PREFIX.encode():
                     print(f'Command executed by {clients[client]}, {str(msg)}')
-                    client.send(handle_command(msg.decode(), client))
+                    client.send("{System} ".encode() + handle_command(msg.decode(), client))
                 else:
                     broadcast(msg, clients[client] + ": ")
             else:
