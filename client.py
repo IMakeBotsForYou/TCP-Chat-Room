@@ -34,8 +34,7 @@ def handle_message(msg):
     # Welcome message
     if search(r"^\{System}", msg):
         if search("Direct message to: ", msg):
-            msg = msg[:28] + encode(msg[28:msg.find("-")-1], KEY) + ": " + \
-                  encode(msg[28 + len(msg[28:msg.find("-")-1])+3:], KEY)
+            msg = msg[:28] + encode(msg[28:msg.find("-")-1], KEY) + ": " + ' '.join([encode(x, KEY) for x in: msg[28 + len(msg[28:msg.find("-")-1])+3:].split(" ")])
         if search("Message from ", msg):
             msg = msg[:14 + 8] + encode(msg[14 + 8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":") + 2:], KEY)
         if search("Command List", msg):
