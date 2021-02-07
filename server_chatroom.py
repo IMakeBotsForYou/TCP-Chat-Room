@@ -38,7 +38,7 @@ def handle_command(msg, client):
     if command == "nick" or command == "nickname":
         if len(args) > 1:
             prev_name = clients[client]
-            clients[client] = "".join(args[1:])
+            clients[client] = "".join(word for word in args[1:] if word != "")
             broadcast(("{System} " + f'{prev_name} changed to {clients[client]}').encode())
             return "Nickname Updated.".encode()
         else:
