@@ -9,6 +9,7 @@ from PIL import ImageTk, Image
 import requests as req
 import time
 
+last_item = 0
 # Are we typing name or message?
 typing_my_name = True
 command_prefix = "/"
@@ -16,28 +17,52 @@ command_prefix = "/"
 HOST = "0"
 PORT = 0
 
+addr = (0, 0)
+
+my_msg = 0  # For the messages to be sent.
+client_socket = socket(AF_INET, SOCK_STREAM)
+top = 0
+msg_list = 0
+BUFFER_SIZE = 1024
+last_update = 0  # last key update
+# Will be used later
+name = ""
+
 
 def encode(txt, key):
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
-# Will be used later
-name = ""
+def leave_server(a):
+    """
+    :param a: Root TKinter object
+    """
+    client_socket.close()
+    a = ServerSelect(a)
 
 
 def handle_message(msg):
     # Welcome message
+    """
+    :param msg: The message being handled
+    Takes parameter msg. This function figures out what do to with said message.
+    It can either be a message from another user, or from the System. So first,
+    we figure out if it's a message from the system, requiring special care.
+    Examples are:
+        - Kicked
+        - Direct Message
+        - User left server
+    """
     global top
     if search(r"^{System}", msg):
         msg = msg[len("{System} "):]
-        print(msg, msg =="get out!")
-        if msg == "get out!":
-            socket.close()
-            top = ServerSelect(top)
+        if msg == "Kindly, leave":
+            leave_server(top)
+
         if msg == "Kicked":
             mb.showinfo("Instructions", "You've been kicked! Oh no!")
-            top.destroy()
-            socket.close()
+            leave_server(top)
+
         if search("Direct message to: ", msg):
             msg = encrypt_few_words(msg, 5)
         if search("Message from ", msg):
@@ -64,10 +89,10 @@ def handle_message(msg):
     return msg
 
 
-last_update = 0  # last key update
-
-
 def update_key(force=False):
+    """
+    :param force: Forces the key update.
+    """
     # I made a heroku app, which updates the key every minute.
     global KEY, last_update
     current_time = int(time.time()) * 1000
@@ -80,7 +105,7 @@ def update_key(force=False):
 
 def receive():
     """Handles receiving of messages."""
-    global top
+    global top, last_item
     while True:
         update_key()
         try:
@@ -99,6 +124,9 @@ def receive():
 
             for line in msg.split("\n"):
                 msg_list.insert(tk.END, line)
+                last_item += 1
+                if search("@" + name, line):
+                    msg_list.itemconfig(last_item, bg='yellow')
         except OSError:  # Possibly client has left the chat.
             break
 
@@ -114,6 +142,35 @@ def encrypt_few_words(msg, start=0, end=-1):
     return ' '.join(args)
 
 
+def command_handler(msg, args):
+    global name
+    if not msg == "quit()" and not msg[0] == command_prefix and not typing_my_name:
+        '''
+        #   Normal Message
+        '''
+        msg = encode(msg, KEY)
+
+    elif msg[0] == command_prefix and not typing_my_name:
+        '''
+        #   Commands
+        '''
+        args[0] = args[0][1:]
+        two_args_commands = ["w", "whisper", "kick", "ban"]
+        one_arg_commands = ["announce", "bold", "login"]
+        if args[0] in two_args_commands:
+            # commands that use 2 arguments
+            msg = encrypt_few_words(msg, 2)
+        elif args[0] in one_arg_commands:
+            # commands that use one argument
+            msg = encrypt_few_words(msg, 1)
+        else:
+            # nickname command
+            name = '_'.join(args[1:])
+            msg = f'/{args[0]} {name}' if f'{command_prefix}{args[0]}' in ["/nick", "/nickname"] else msg
+        msg = ' '.join(list(filter(None, msg.split(" "))))  # remove extra spaces
+    return msg
+
+
 def send(event=None):  # event is passed by binders.
     """Handles sending of messages.
     :type event: object
@@ -122,33 +179,8 @@ def send(event=None):  # event is passed by binders.
     get = my_msg.get()
     if get == "":
         return
-    msg = get
-    args = msg.split(" ")
-    update_key(typing_my_name)
-
-    if args[0] == f'{command_prefix}nick' or args[0] == f'{command_prefix}nickname':
-        '''
-        #   Nickname change
-        '''
-        typing_my_name = True
-        msg.replace(" ", "_")
-
-    elif not get == "quit()" and not get[0] == command_prefix and not typing_my_name:
-        '''
-        #   Normal Message
-        '''
-        msg = encode(get, KEY)
-
-    elif get[0] == command_prefix:
-        '''
-        #   Commands
-        '''
-        two_args_commands = ["w", "whisper", "kick", "ban"]
-        if args[0][1:] in two_args_commands:
-            msg = encrypt_few_words(msg, 2)
-        else:
-            msg = encrypt_few_words(msg, 1)
-        msg = ' '.join(list(filter(None, msg.split(" "))))  # remove extra spaces
+    update_key()
+    msg = command_handler(get, get.split(" "))
 
     my_msg.set("")  # Clears input field.
     client_socket.send(bytes(msg, "utf8"))
@@ -161,50 +193,47 @@ def on_closing(event=None):
     send()
 
 
-addr = (0, 0)
-
-my_msg = 0  # For the messages to be sent.
-client_socket = socket(AF_INET, SOCK_STREAM)
-top = 0
-msg_list = 0
-BUFFER_SIZE = 1024
-
-
 def confirm_config(x, ip, port):
     global addr, my_msg, client_socket, top, msg_list, BUFFER_SIZE
-    print(ip, port)
     if ip == "" or "Enter IP":
         ip = "79.177.33.79"
         # ip = "10.0.0.12"
     if port == "" or "Enter PORT":
         port = 45000
     addr = ip, port
+    print(f'Connecting to {addr}...')
 
     x.destroy()
     top = tk.Tk()
     top.title("Chatter")
+    top.minsize(500, 150)
     top.attributes("-topmost", True)
 
     my_msg = tk.StringVar()  # For the messages to be sent.
     messages_frame = tk.Frame(top)
 
-    my_msg = tk.StringVar()  # For the messages to be sent.
     my_msg.set("")
     scrollbar = tk.Scrollbar(messages_frame)  # To navigate through past messages.
     # Following will contain the messages.
     msg_list = tk.Listbox(messages_frame, height=15, width=75, yscrollcommand=scrollbar.set)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    msg_list.pack(side=tk.LEFT, fill=tk.BOTH)
+    scrollbar.grid(row=0,column=1, sticky="ewns")
+    msg_list.insert(tk.END, "Loading you in. This may take a bit.")
 
-    msg_list.pack()
-    messages_frame.pack()
+    messages_frame.grid(row=1, column=0, columnspan=3, padx=10, pady=10, sticky="ewns")
+    top.columnconfigure(0, weight=1)
+    top.rowconfigure(1, weight=1)
 
-    entry_field = tk.Entry(top, textvariable=my_msg)
+    messages_frame.rowconfigure(0, weight=1)
+    messages_frame.columnconfigure(0, weight=1)
+
+    msg_list.grid(row=0, column=0, sticky="ewns")
+
+    entry_field = tk.Entry(messages_frame, textvariable=my_msg)
     entry_field.bind("<Return>", send)
-    entry_field.pack()
-    send_button = tk.Button(top, text="Send", command=send)
-    send_button.pack()
-    top.protocol("WM_DELETE_WINDOW", on_closing)
+    entry_field.grid(row=1, column=0, sticky="wnse")
+    send_button = tk.Button(messages_frame, text="Send", command=send, height=2,width=10)
+    send_button.grid(row=1, column=0, sticky="ens")
+    top.protocol("WM_DELETE_WINDOW", "on_closing")
 
     client_socket = socket(AF_INET, SOCK_STREAM)
     client_socket.connect(addr)
@@ -239,7 +268,6 @@ class EntryWithPlaceholder(tk.Entry):
     def foc_out(self, *args):
         if not self.get():
             self.put_placeholder()
-
 
 
 class ServerSelect:
