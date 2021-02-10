@@ -13,10 +13,10 @@ HOST = input('Enter host: ')
 PORT = input('Enter port: ')
 
 if not HOST:
-    HOST = "10.0.0.24"
-    # HOST = "109.67.94.77"
+    # HOST = "213.57.158.173"
+    HOST = "109.64.93.54"
 if not PORT:
-     PORT = 45000
+    PORT = 45000
     # PORT = 21567
 else:
     PORT = int(PORT)
@@ -34,14 +34,13 @@ def handle_message(msg):
     # Welcome message
     if search(r"^\{System}", msg):
         if search("Direct message to: ", msg):
-            msg = msg[:28] + encode(msg[28:msg.find("-")-1], KEY) + ": " +\
-                ' '.join([encode(x, KEY) for x in msg[28 + len(msg[28:msg.find("-")-1])+3:].split(" ")])
+            msg = msg[:28] + encode(msg[28:msg.find("-")-1], KEY) + ": " + ' '.join([encode(x, KEY) for x in: msg[28 + len(msg[28:msg.find("-")-1])+3:].split(" ")])
         if search("Message from ", msg):
             msg = msg[:14 + 8] + encode(msg[14 + 8:msg.find(":")], KEY) + ": " + encode(msg[msg.find(":") + 2:], KEY)
         if search("Command List", msg):
-            msg = "Command List:\n" +\
-                  "/nick <new name>: Rename Yourself!\n" +\
-                  "/whisper <name>: whisper to someone\n" +\
+            msg = "Command List:\n" \
+                  "/nick <new name>: Rename Yourself!\n" \
+                  "/whisper <name>: whisper to someone\n" \
                   "/online: show who's online!\n"
         elif search("has joined the chat!$", msg):
             temp_name = search("{System} (.+) has joined the chat!$", msg).groups()[0]
@@ -87,8 +86,7 @@ def receive():
                       encode(msg[n_len + 2:], KEY)
             else:
                 msg = handle_message(msg)
-            for line in msg.split("\n"):
-                msg_list.insert(tkinter.END, line)
+            msg_list.insert(tkinter.END, msg)
         except OSError:  # Possibly client has left the chat.
             break
 
