@@ -98,25 +98,34 @@ def handle_message(msg, tk_obj):
         - User left server
     """
     args = msg.split(" ")
+    print(f"msg: {msg}")
     if search(r"^{System}", msg):
 
         msg = msg[len("{System} "):]
+        if msg.find("Kicked") != -1:
+            end = find_end(msg, ". ")  # Reason for kick was provided
 
-        if msg == "Kindly, leave":
+            if end == 1:
+                mb.showinfo("Instructions", "You've been kicked! Oh no!")
+                print("No reason")
+            else:
+                mb.showinfo("Instructions", f'{encrypt_few_words(msg[end:], 1)}')
             select_server(tk_obj)
 
-        if msg == "Kicked":
-            mb.showinfo("Instructions", "You've been kicked! Oh no!")
-            select_server(tk_obj)
+        elif msg.find("was kicked by") != -1:
+            x = msg.find("{System}")
+            x = len(msg) if x == -1 else x
+            msg = msg[:x]
+            if len(args) > 6:
+                msg = encrypt_few_words(msg, 6)  # name was kicked by name for (args[6] + )
 
-        if search("Welcome", msg):
+        elif search("Welcome", msg):
             typing_my_name[0] = False  # Valid name
 
         if search("Update user_num", msg):
             online_member_number_but_its_an_int[0] = int(msg[msg.find(",")+1:msg.find("{System}")])
             online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
 
-        if search("Update members", msg):
             msg = msg[find_end(msg, "{System} "):]
 
             members = msg[14:].split("+")
@@ -128,24 +137,19 @@ def handle_message(msg, tk_obj):
                 print("add", member)  # add them back with new user / nickname
                 names.insert(tk.END, member)
             msg = "don't" if not search("changed to", msg) else msg
+            # if we need to update bc a nickname change, keep checking the message
 
-        if search("has left the chat.", msg):
-            online_member_number_but_its_an_int[0] -= 1
-            online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
-            removed_name = msg[:msg.find(" has")]
-            names = tk_obj.winfo_children()[1].winfo_children()[1]
-            names.delete(find_index(names, removed_name))
-
-        if search("Direct message to: ", msg):
+        elif search("Direct message to: ", msg):
             msg = encrypt_few_words(msg, 5)
-        if search("Message from ", msg):
-            print(args)
-            msg = f'{msg[find_end(msg, args[3])]}: {encode(msg[find_end(msg, args[3]) + 2:], KEY)}'
-        if search("Command List", msg):
+
+        elif search("Message from ", msg):
+            msg_array = msg[find_end(msg, args[3]) + 1:].split(" ")
+            msg = f'{msg[:find_end(msg, args[3])]} {" ".join([encode(x, KEY) for x in msg_array])}'
+        elif search("Command List", msg):
             msg = msg[len("Command List") + 1:]
 
         # Nickname
-        elif search("changed to", msg):
+        if search("changed to", msg):
             found_nicks = [x for x in list(search(r"^(.+) changed to (.+)", msg).groups())]
             msg = "{System} " + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
 
@@ -155,15 +159,27 @@ def handle_message(msg, tk_obj):
             after = " | ".join([x for x in msg[len(before) + 1:].split(" | ")])
             msg = before + after
 
+        elif search(r"Not a valid command", msg):
+            msg = "Invalid Command."
+
         # On user leave
         elif search("left the chat", msg):
-            user_name = search(r'^(.+) has left the chat.$', msg).groups()[0]
-            print(f'LEFT CHAT: {user_name}')
-            msg = "{System} " + f'{user_name} has left the chat.'
+            try:
+                user_name = search(r'^(.+) has left the chat.$', msg).groups()[0]
+                print(f'LEFT CHAT: {user_name}')
+                msg = "{System} " + f'{user_name} has left the chat.'
+            except AttributeError:
+                pass
+        else:
+            msg = msg
+    else:
+        if msg.find("Kindly, leave") != -1:
+            select_server(tk_obj)
     return msg
 
 
 def encrypt_few_words(msg, start=0, end=-1):
+    global KEY
     args = msg.split(" ")
     end = end if end != -1 else len(args) - 1
     for i in range(start, end + 1):
@@ -173,6 +189,8 @@ def encrypt_few_words(msg, start=0, end=-1):
 
 def command_handler(msg, args):
     global name
+    msg = ' '.join(list(filter(None, args)))  # remove extra spaces
+    args = list(filter(None, args))  # remove extra spaces
     if not msg == "quit()" and not msg[0] == command_prefix and not typing_my_name[0]:
         '''
         #   Normal Message
@@ -185,11 +203,11 @@ def command_handler(msg, args):
         '''
         args[0] = args[0][1:]
         two_args_commands = ["w", "whisper", "kick", "ban"]
-        one_arg_commands = ["announce", "bold", "login"]
+        one_arg_commands = ["announce", "bold", "login", "block"]
 
         if args[0] in two_args_commands:
             # commands that use 2 arguments
-            if len(args) < 3:
+            if len(args) < 3 and args[0] not in ["kick", "ban"]:
                 msg = f"{command_prefix}usage_{args[0]}"
             else:
                 msg = encrypt_few_words(msg, 2)
@@ -206,7 +224,9 @@ def command_handler(msg, args):
             msg = f'{command_prefix}{args[0]} {name}' if f'{command_prefix}{args[0]}' in \
                                                          [f"{command_prefix}nick", f"{command_prefix}nickname"] \
                                                          else msg
-        msg = ' '.join(list(filter(None, msg.split(" "))))  # remove extra spaces
+        msg = ' '.join(list(filter(None, msg.split(" "))))
+        # remove extra spaces again,
+        # in case it sucked the first time
     else:
         name = "_".join(args)
 
@@ -237,7 +257,6 @@ def receive(tk_obj, client_sock):
             msg = client_sock.recv(BUFFER_SIZE).decode("utf8")
             # find length of username if there is one
             n_len = msg.find(':')
-
             if not n_len == -1 and not search(r"^{System}", msg):
                 update_key()
                 msg = msg[:n_len] + ": " + encode(msg[n_len + 2:], KEY)
@@ -270,6 +289,16 @@ def listbox_copy(event):
     if selection:
         index = selection[0]
         copy(event.widget.get(index))
+
+
+def go_to_dm(event, entry_field):
+    try:
+        selection = event.widget.curselection()[0]
+        if search(f"^{command_prefix}(whisper)|(w)", entry_field.get()):
+            entry_field.delete('0', 'end')
+        entry_field.insert(0, f'{command_prefix}whisper {event.widget.get(selection)} ')
+    except IndexError:
+        pass
 
 
 def send(input_msg, event=None):
@@ -329,7 +358,7 @@ def chat_room(tk_obj):
     # online_text.pack(side="top", fill="both")
     # users_list.pack(side="left", fill="both")
     users_list.grid(row=1, column=0, sticky="ewns")
-    users_list.bind('<<ListboxSelect>>', lambda event: listbox_copy(event))
+    users_list.bind('<<ListboxSelect>>', lambda event: go_to_dm(event, entry_field))
     online_text.grid(row=0, column=0, sticky="nwse")
 
     tk_obj.columnconfigure(1, weight=1)
