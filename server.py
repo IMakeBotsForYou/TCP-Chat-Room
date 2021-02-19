@@ -1,8 +1,10 @@
-"""Server for multithreaded (asynchronous) chat application."""
+"""Server for multi-threaded (asynchronous) chat application."""
 from re import search
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import requests as req
+import time
+last_update = 0
 
 
 def accept_incoming_connections():
@@ -14,7 +16,18 @@ def accept_incoming_connections():
                     "After you login, Enter /help or /commands to see the command list!".encode())
         addresses[client] = client_address
         Thread(target=handle_client, args=(client,)).start()
+        print(f"Starting thread for {client_address}")
 
+
+usage = {
+    "nick": "/nick <new name>: Rename Yourself!",
+    "nickname": "/nickname <new name>: Rename Yourself!",
+    "w": "/w <name>: whisper to someone",
+    "whisper": "/whisper <name>: whisper to someone",
+    "online": "/online: show who's online!",
+    "current": "current: show who's online!",
+    "login": "/login <password> Try logging in as admin!"
+}
 
 command_list = "Command List:\n" + \
                "/nick <new name>: Rename Yourself!\n" + \
@@ -25,7 +38,7 @@ command_list = "Command List:\n" + \
 admin_cmd_list = "/end, or /close -> closes server.\n" + \
                  "/boot or /kick -> kicks a user by username\n"
 
-admin_password = "mike"
+admin_password = "danistheking"
 
 COMMAND_PREFIX = "/"
 
@@ -46,20 +59,25 @@ def get_client(val, ip=False):
     return "invalid"
 
 
-def retrieve_key(client):
+def retrieve_key(force=False):
     """
-    Asks the client for its current key.
-    :param client: The client being asked.
+    :param force: Forces the key update.
+    This retrieves key from the heroku key api.
     """
-    client.send(("What is the key?".encode()))
-    return int(client.recv(BUFSIZ).decode())
+    # I made a heroku app, which updates the key every minute.
+    global last_update
+    current_time = int(time.time()) * 1000
+    if current_time - last_update > 60_000 or force:  # Update time for key
+        data = req.get('https://get-api-key-2021.herokuapp.com/').json()
+        last_update = data['last_time']
+        return data['code']
 
 
 def kick(client, delete=True, cl=False, message=True):
     """
     :param client: The client being kicked/removed
     :param delete: Delete the client from the client list
-    :param close:  The server is being closed, so no need to say who left.
+    :param cl:  The server is being closed, so no need to say who left.
     :param message: Do we tell them they're kicked or no?
     Kicks a user.
     """
@@ -69,12 +87,16 @@ def kick(client, delete=True, cl=False, message=True):
         broadcast(("{System} " + "%s has left the chat." % clients[client][0]).encode())
     if delete:
         print(f"Deleted {clients[client]}")
+        del addresses[client]
         del clients[client]
-    client.close()
+    client.send("Kindly, leave".encode())
 
 
 def close_server():
     # If admin, close
+    """
+
+    """
     for x in clients:
         try:
             kick(x, False, True)
@@ -83,8 +105,7 @@ def close_server():
     lst = list(clients.keys()).copy()
     for x in lst:
         clients.pop(x, None)
-    exit(0)
-    quit(0)
+    SERVER.close()
 
 
 def handle_command(msg, client):
@@ -105,11 +126,21 @@ def handle_command(msg, client):
     command = args[0][1:]
 
     '''
+    User is dumb
+    '''
+    print(args)
+    if args[0].find("usage_") == 1:
+        msg = msg[len(COMMAND_PREFIX)+len("usage_"):]
+        command = msg.split(" ")[0]
+        print(command)
+        return "{System} Usage: ".encode() + usage[command].encode()
+
+    '''
     Admin commands
     '''
     if clients[client][1]:
         if command == "kick":
-            recipient_name = ''.join([chr(ord(a) ^ retrieve_key(client)) for a in ''.join(args[1:])])
+            recipient_name = ''.join([chr(ord(a) ^ retrieve_key()) for a in ''.join(args[1:])])
 
             # Are we kicking an ip or a name?
             if search(r"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?\.){4}"[:-1], recipient_name):
@@ -127,7 +158,10 @@ def handle_command(msg, client):
     '''
     if command == "close" or command == "end":
         if clients[client][1]:
-            close_server()
+            try:
+                close_server()
+            except OSError:
+                pass
         else:
             return 'You can\'t do that!'.encode()
 
@@ -146,7 +180,7 @@ def handle_command(msg, client):
                 return "Canceled.".encode()
         else:
             print(f"Logging {clients[client][0]} in")
-            key = req.get("https://get-api-key-2021.herokuapp.com/").json()['code']
+            key = retrieve_key()
 
             passw = ''.join([chr(ord(a) ^ key) for a in ''.join(args[1:])])
             clients[client] = [clients[client][0], passw == admin_password]
@@ -157,8 +191,8 @@ def handle_command(msg, client):
     if command == "w" or command == "whisper":
         recipient_name = args[1]
         recipient = get_client(recipient_name)
-        if recipient == client:
-            return "You can't message yourself, dummy".encode()
+        # if recipient == client:
+        #     return "You can't message yourself, dummy".encode()
 
         if recipient != "invalid":
             recipient.send(("{System} Message from " + clients[client][0] + ": " + ' '.join(args[2:])).encode())
@@ -174,13 +208,21 @@ def handle_command(msg, client):
         if len(args) > 1:
 
             recipient_name = args[1]
+            banned_keywords = ["{System}", "@", COMMAND_PREFIX]
+            if len([recipient_name.find(x) for x in banned_keywords]) != 0:
+                return "Invalid nickname".encode()
             recipient = get_client(recipient_name)
             print(recipient)
 
             if recipient == "invalid":
                 prev_name = clients[client][0]
                 clients[client][0] = "_".join(word for word in args[1:] if word != "")
-                broadcast(("{System} " + f'{prev_name} changed to {clients[client][0]}').encode())
+
+                mess1 = "{System} ".encode() + f"Update user_num,{len(clients.values())}".encode()
+                mess2 = "{System} ".encode() + f"Update members{'+'.join([x[0] for x in clients.values()])}".encode()
+                broadcast(mess1 + mess2)
+
+                broadcast(("{System} " + f'{prev_name} changed to {clients[client][0]}\n').encode())
                 return "Nickname Updated.".encode()
             else:
                 return f'That name is taken.'.encode()
@@ -198,8 +240,15 @@ def handle_client(client):  # Takes client socket as argument.
 
     try:
         name = client.recv(BUFSIZ).decode()
+        banned_words = ["{System}", "@"] + [x[0] for x in clients.values()]
+        print(banned_words)
+        while len([key_word for key_word in banned_words if name.find(key_word) != -1]) != 0:
+            client.send("Invalid nickname, the name is either taken or ".encode())
+            name = client.recv(BUFSIZ).decode()
+
     except ConnectionResetError:  # 10054
-        print("error")
+        print("Client error'd out.")
+        del addresses[client]
     else:
         connection_working = True
         print("Handling client")
@@ -208,13 +257,24 @@ def handle_client(client):  # Takes client socket as argument.
         msg = "{System} " + "%s has joined the chat!" % name
         broadcast(msg.encode())
         clients[client] = [name.replace(" ", "_"), False]
+
+        mess1 = "{System} ".encode() + f"Update user_num,{len(clients.values())}".encode()
+        mess2 = "{System} ".encode() + f"Update members{'+'.join([x[0] for x in clients.values()])}".encode()
+
+        broadcast(mess1+mess2)
+
         while True:
             try:
                 msg = client.recv(BUFSIZ)
             except ConnectionResetError:  # 10054
                 connection_working = False
+                del clients[client]
+                del addresses[client]
             except ConnectionAbortedError:
                 connection_working = False
+                del clients[client]
+                del addresses[client]
+
             if connection_working and msg != "quit()".encode():
                 if chr(msg[0]).encode() == COMMAND_PREFIX.encode():
                     print(f'Command executed by {clients[client][0]}, {str(msg.decode("utf8"))}')
@@ -223,12 +283,18 @@ def handle_client(client):  # Takes client socket as argument.
                     broadcast(msg, clients[client][0] + ": ")
             else:
                 try:
-                    client.send("{System} get out!".encode())
-                    kick(client, message=False)
+                    client.send("{System} Kindly, leave".encode())
+                    kick(client, message=False, delete=False, cl=False)
+                    del clients[client]
+                    del addresses[client]
                 except ConnectionResetError:  # 10054
                     connection_working = False
+                    del clients[client]
+                    del addresses[client]
                 except OSError:
                     connection_working = False
+                    del clients[client]
+                    del addresses[client]
                 break
 
 
