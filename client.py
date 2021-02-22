@@ -1,5 +1,5 @@
 """Script for Tkinter GUI chat client."""
-from socket import AF_INET, socket, SOCK_STREAM
+from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK
 from threading import Thread
 from re import search
 import tkinter as tk
@@ -47,14 +47,18 @@ class EntryWithPlaceholder(tk.Entry):
         self.insert(0, self.placeholder)
         self['fg'] = self.placeholder_color
 
-    def foc_in(self, *args):
+    def foc_in(self):
         if self['fg'] == self.placeholder_color:
             self.delete('0', 'end')
             self['fg'] = self.default_fg_color
 
-    def foc_out(self, *args):
+    def foc_out(self):
         if not self.get():
             self.put_placeholder()
+
+
+def msg_len(data):
+    return str(len(data)).zfill(3)
 
 
 def encode(txt, key):
@@ -84,99 +88,6 @@ def on_closing(tk_obj, messenger=None, event=None):
         tk_obj.destroy()
 
 
-def handle_message(msg, tk_obj):
-    # Welcome message
-    """
-    :param msg: The message being handled
-    :param tk_obj: The tk form object.
-    Takes parameter msg. This function figures out what do to with said message.
-    It can either be a message from another user, or from the System. So first,
-    we figure out if it's a message from the system, requiring special care.
-    Examples are:
-        - Kicked
-        - Direct Message
-        - User left server
-    """
-    args = msg.split(" ")
-    if search(r"^{System}", msg):
-
-        msg = msg[len("{System} "):]
-        if msg.find("Kicked") != -1:
-            end = find_end(msg, ". ")  # Reason for kick was provided
-
-            if end == 1:
-                mb.showinfo("Instructions", "You've been kicked! Oh no!")
-                print("No reason")
-            else:
-                mb.showinfo("Instructions", f'{encrypt_few_words(msg[end:], 1)}')
-            select_server(tk_obj)
-
-        elif msg.find("was kicked by") != -1:
-            x = msg.find("{System}")
-            x = len(msg) if x == -1 else x
-            msg = msg[:x]
-            if len(args) > 6:
-                msg = encrypt_few_words(msg, 6)  # name was kicked by name for (args[6] + )
-
-        elif search("Welcome", msg):
-            typing_my_name[0] = False  # Valid name
-
-        if search("Update user_num", msg):
-            online_member_number_but_its_an_int[0] = int(msg[msg.find(",")+1:msg.find("{System}")])
-            online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
-
-            msg = msg[find_end(msg, "{System} "):]
-
-            members = msg[14:].split("+")
-            names = tk_obj.winfo_children()[1].winfo_children()[1]
-
-            names.delete(0, tk.END)  # delete all users
-
-            for member in members:
-                # print("add", member)  # add them back with new user / nickname
-                names.insert(tk.END, member)
-            msg = "don't" if not search("changed to", msg) else msg
-            # if we need to update bc a nickname change, keep checking the message
-
-        elif search("Direct message to: ", msg):
-            msg = encrypt_few_words(msg, 5)
-
-        elif search("Message from ", msg):
-            msg_array = msg[find_end(msg, args[3]) + 1:].split(" ")
-            msg = f'{msg[:find_end(msg, args[3])]} {" ".join([encode(x, KEY) for x in msg_array])}'
-        elif search("Command List", msg):
-            msg = msg[len("Command List") + 1:]
-
-        # Nickname
-        if search("changed to", msg):
-            found_nicks = [x for x in list(search(r"^(.+) changed to (.+)", msg).groups())]
-            msg = "{System} " + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
-
-        # Users Online
-        elif search(r"\d+ users online", msg):
-            before = msg[:msg.find("online") + len("online")] + " , "
-            after = " | ".join([x for x in msg[len(before) + 1:].split(" | ")])
-            msg = before + after
-
-        elif search(r"Not a valid command", msg):
-            msg = "Invalid Command."
-
-        # On user leave
-        elif search("left the chat", msg):
-            try:
-                user_name = search(r'^(.+) has left the chat.$', msg).groups()[0]
-                print(f'LEFT CHAT: {user_name}')
-                msg = "{System} " + f'{user_name} has left the chat.'
-            except AttributeError:
-                pass
-        else:
-            msg = msg
-    else:
-        if msg.find("Kindly, leave") != -1:
-            select_server(tk_obj)
-    return msg
-
-
 def encrypt_few_words(msg, start=0, end=-1):
     global KEY
     args = msg.split(" ")
@@ -186,50 +97,59 @@ def encrypt_few_words(msg, start=0, end=-1):
     return ' '.join(args)
 
 
-def command_handler(msg, args):
+def format_message(args):
     global name
     msg = ' '.join(list(filter(None, args)))  # remove extra spaces
     args = list(filter(None, args))  # remove extra spaces
-    if not msg == "quit()" and not msg[0] == command_prefix and not typing_my_name[0]:
-        '''
-        #   Normal Message
-        '''
-        msg = encode(msg, KEY)
 
-    elif msg[0] == command_prefix and not typing_my_name[0]:
-        '''
-        #   Commands
-        '''
-        args[0] = args[0][1:]
-        two_args_commands = ["w", "whisper", "kick"]
-        one_arg_commands = ["announce", "login", "block"]
+    color = "NOBGCL"
+    type = "Normal"
 
-        if args[0] in two_args_commands:
-            # commands that use 2 arguments
-            if len(args) < 3 and args[0] not in ["kick", "ban"]:
-                msg = f"{command_prefix}usage_{args[0]}"
-            else:
-                msg = encrypt_few_words(msg, 2)
+    if msg == "quit()":
+        return msg_len(msg.encode()), type, color, msg
 
-        elif args[0] in one_arg_commands:
-            # commands that use one argument
-            if len(args) < 2:
-                msg = f"{command_prefix}usage_{args[0]}"
-            else:
-                msg = encrypt_few_words(msg, 1)
-        else:
-            # nickname command
+    everyone_commands = ["nick", "nickname", "kick", "color"]
+    you_commands = ["w", "whisper", "current", "online", "login", "logout", "block"]
+
+    command = args[0][len(command_prefix):]
+    if typing_my_name[0]:
+        msg = "_".join(args)
+        length = msg_len(msg)
+        color = "04CC04"
+        return length, type, color, "_".join(args)
+    if command in everyone_commands:
+        type = "EvrCmd"
+        color = "904010"
+
+        if command in ["nick", "nickname"]:
             name = '_'.join(args[1:])
-            msg = f'{command_prefix}{args[0]} {name}' if f'{command_prefix}{args[0]}' in \
-                                                         [f"{command_prefix}nick", f"{command_prefix}nickname"] \
-                                                         else msg
-        msg = ' '.join(list(filter(None, msg.split(" "))))
-        # remove extra spaces again,
-        # in case it sucked the first time
-    else:
-        name = "_".join(args)
+            msg = f'{args[0]} {name}'
 
-    return msg
+        if command == "kick":
+            color = "AA0000"
+            msg = encrypt_few_words(msg, 2)
+
+        if command == "color":
+            if search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', args[1]):
+                color = args[1][1:]
+                msg = encrypt_few_words(' '.join(args), 2)
+            else:
+                msg = ""  # invalid, will not send
+
+    elif command in you_commands:
+        type = "SlfCmd"
+        if command in ["w", "whisper"]:
+            color = "ab9aa0"
+            msg = encrypt_few_words(msg, 2)
+
+        if command == "login":
+            msg = encrypt_few_words(msg, 1)
+    else:
+        # Normal message
+        msg = encrypt_few_words(msg)
+
+    length = msg_len(msg.encode())
+    return length, type, color, msg
 
 
 def update_key(force=False):
@@ -246,38 +166,144 @@ def update_key(force=False):
         print("Updated key to", KEY)
 
 
+def handle_incoming_command(data, tk_obj):
+
+    if data[:7] == "[color]":
+        return encrypt_few_words(data[7:], 1)
+
+    elif data[:len("Kicked")] == "Kicked":
+        reason = find_end(data, ". ") == 1
+        if reason:
+            mb.showinfo("Info", f"You've been kicked. "
+                                f"Reason: {encrypt_few_words(data[find_end(data, 'Kicked. Reason:')], 2)}")
+        else:
+            mb.showinfo("Info", "Oh no! You've been kicked.")
+        select_server(tk_obj)
+
+    elif data.find("was kicked by") != -1:
+        # Name was kicked by Name for Reason
+        reason = find_end(data, "for") != -1
+        if reason:
+            return encrypt_few_words(data, 6)
+
+    elif data.find("Welcome") != -1:
+        typing_my_name[0] = False
+
+    elif data.find("Update user_num") != -1:
+        online_member_number_but_its_an_int[0] = int(data[data.find(",") + 1:])
+        online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
+
+    elif data.find("Update members") != -1:
+        members = data[14:].split("+")
+        names = tk_obj.winfo_children()[1].winfo_children()[1]
+        names.delete(0, tk.END)  # delete all users
+        for member in members:
+            # add them back with new user / nickname
+            names.insert(tk.END, member)
+
+    elif data.find("Message from") != -1 or data.find("Message to") != -1:
+        data = encrypt_few_words(data, 3)
+        print(f'Decrypting... ->  {data}')
+
+    elif data == "Kindly, leave":
+        select_server(tk_obj)
+        return
+
+    return data
+
+
+def black_or_white(color):
+    color = "2c2f33" if color == "NOBGCL" else color
+    red = int(f"0x{color[:2]}", 16)
+    green = int(f"0x{color[2:4]}", 16)
+    blue = int(f"0x{color[4:6]}", 16)
+    return "#000000" if red * 0.299 + green * 0.587 + blue * 0.114 > 186 else "#ffffff"
+
+
 def receive(tk_obj, client_sock):
     while True:
         update_key()
         try:
             msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
             msg_list.see("end")
-            # accessing all the damn frames and that
-            msg = client_sock.recv(BUFFER_SIZE).decode("utf8")
-            # find length of username if there is one
-            n_len = msg.find(':')
-            if not n_len == -1 and not search(r"^{System}", msg):
-                update_key()
-                msg = msg[:n_len] + ": " + encode(msg[n_len + 2:], KEY)
-            else:
-                msg = handle_message(msg, tk_obj)
+            data = "hehehe"
+            color = "#BBBBBB"
 
-            if msg != "Kindly, leave":
+            # accessing all the damn frames and that
+            # 6-Type 3-Length 6-Color 1-Display || Data
+            msg_type = client_sock.recv(6).decode()
+            print("New Message:")
+            print("Type: " + msg_type, end=" | Entire message: ")
+            print(client_sock.recv(1000, MSG_PEEK).decode())
+            if msg_type == "SysCmd":
+                next_command_size = client_socket.recv(3).decode()
+                print("Size: " + next_command_size, end=" | ")
+
+                color = client_sock.recv(6).decode()
+                color = "2c2f33" if color == "NOBGCL" else color
+                print("Color: " + color, end=" | ")
+                # Runs until it hits a command with length 0,
+                # Signaling the end of the communication.
+                print("Data:")
+                while next_command_size != "000":
+                    display = client_socket.recv(1).decode()
+                    data = client_socket.recv(int(next_command_size)).decode()
+                    print(data)
+                    # 1 display | 0 don't display
+                    if display == '1':
+                        msg = handle_incoming_command(data=data, tk_obj=tk_obj)
+
+                        for line in msg.split("\n"):
+                            try:
+                                msg_list.insert(tk.END, line)
+                                last_item[0] += 1
+                                msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
+                            except tk.TclError:  # server closed
+                                pass
+                            if line.find(f'@{name}') != -1:
+                                msg_list.itemconfig(last_item[0], bg='#C28241')
+
+                    else:
+                        _ = handle_incoming_command(data=data, tk_obj=tk_obj)
+
+                    next_command_size = client_socket.recv(3).decode()
+                    if next_command_size != "000":
+                        color = client_sock.recv(6).decode()
+                        print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Data: ")
+                # Example message:
+                # SysCmd018FFFFFF0Update user_num,01017FFFFFF0Update membersDan000
+                print('--------------------')
+            elif msg_type == "Normal":
+                size = client_socket.recv(3).decode()
+                color = client_socket.recv(6).decode()
+                msg = client_sock.recv(int(size)).decode()
+                current_user = msg[:msg.find(": ")]
+                msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ')+2:])}"
                 for line in msg.split("\n"):
-                    if msg != "don't":
-                        try:
-                            msg_list.insert(tk.END, line)
-                            last_item[0] += 1
-                        except tk.TclError:  # server closed
-                            pass
+                    try:
+                        msg_list.insert(tk.END, line)
+                        last_item[0] += 1
+                        msg_list.itemconfig(last_item[0], bg=f'#{color}')
+                    except tk.TclError:  # server closed
+                        pass
                     if line.find(f'@{name}') != -1:
                         msg_list.itemconfig(last_item[0], bg='#C28241')
+            else:
+                test = msg_type + color + data + client_socket.recv(1024).decode()
+                if test:
+                    print("Error. Dumping data", test)
+
         except OSError:
             break  # Client has left the chat
         except IndexError:
             break  # Client has left the chat
         except RuntimeError:
             break  # Client has left the chat
+
+        except Exception as e:  # if we get any other error it's bc you messed up not me
+            print("You dun messed up.", e)
+            print("But don't worry, we handled it.")
+            break
 
 
 def listbox_copy(event):
@@ -305,9 +331,14 @@ def send(input_msg, event=None):
     if get == "":
         return
     update_key()
-    msg = command_handler(get, get.split(" "))
+    length, type, color, data = format_message(get.split(" "))
+    msg = data
+    if not typing_my_name[0]:
+        msg = f"{length}{type}{color}{data}"
+        print(F"\n\nSent:{msg}\n")
     input_msg.set("")
-    client_socket.send(bytes(msg, "utf8"))
+    if length != "000":
+        client_socket.send(msg.encode())
 
 
 def resize_font(message_list, event=None):
@@ -343,6 +374,8 @@ def chat_room(tk_obj):
     # Following will contain the messages.
     entry_field = tk.Entry(messages_frame, textvariable=my_msg)
     entry_field.bind("<Return>", lambda x: send(my_msg))
+    entry_field.bind('<Control-a>', lambda event: event.widget.select_range(0, 'end'))
+
     entry_field.grid(row=1, column=1, sticky="wnse")
     send_button = tk.Button(messages_frame, text="Send",
                             command=lambda: send(my_msg), height=2, width=10)
