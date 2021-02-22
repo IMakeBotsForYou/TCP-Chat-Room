@@ -1,6 +1,6 @@
 """Server for multi-threaded (asynchronous) chat application."""
 from re import search
-from socket import AF_INET, socket, SOCK_STREAM
+from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK
 from threading import Thread
 import requests as req
 import time
@@ -8,6 +8,21 @@ import time
 KEY = [0]
 last_update = 0
 server_up = [True]
+cmd_prefix = "/"
+colours = {
+    "red": "dd0404",
+    "pink": "ff6666",
+    "low-yellow": "d9c000",
+    "orange-warning": "D49B00",
+    "low-green": "339966",
+    "bright-green": "27DB03",
+    "blue": "0066cc",
+    "whisper-gray": "ab9aa0"
+}
+
+
+def msg_len(data):
+    return str(len(data.encode())).zfill(3)
 
 
 def accept_incoming_connections():
@@ -16,8 +31,10 @@ def accept_incoming_connections():
         try:
             client, client_address = SERVER.accept()
             print(f"{client_address} has connected.")
-            client.send("Greetings from the cave! Now type your name and press enter!\n".encode() +
-                        "After you login, Enter /help or /commands to see the command list!".encode())
+            data = "Greetings from the cave! Now type your name and press enter!\n" \
+                   "After you login, Enter /help or /commands to see the command list!"
+            header = "SysCmd" + msg_len(data) + "NOBGCL" + "1"
+            client.send((header + data + "000").encode())
             addresses[client] = client_address
             Thread(target=handle_client, args=(client,)).start()
             print(f"Starting thread for {client_address}")
@@ -36,9 +53,12 @@ usage = {
     "current": "current: show who's online!",
     "login": "/login <password> Try logging in as admin!",
     "block": "/block <username> You can't see a users messages anymore.\nTo revert, do /unblock <username>",
+    "color": "/color ",
     "kick": "admin_/kick <username>: kicks a user",
-    "ban": "admin_/ban <username>: bans a user",
-
+    "boot": "admin_/boot <username>: kicks a user",
+    "logout": "admin_/logout: logs out of admin mode",
+    "end": "admin_/end: Ends server lol",
+    "close": "admin_/end: Ends server lol"
 }
 
 command_list = "Command List:\n" + \
@@ -96,17 +116,24 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
     """
     if message:
         if custom == "":
-            client.send("{System} Kicked".encode())
+            data = "Kicked"
+            header = "SysCmd" + msg_len(data) + colours['red'] + "0"
+            client.send((data + header).encode())
         else:
-            client.send(("{System} Kicked. Reason: " + custom).encode())
+            data = "Kicked. Reason: " + custom
+            header = "SysCmd" + msg_len(data) + colours['red'] + "0"
+            client.send((data + header).encode())
     if not cl:
-        broadcast(("{System} " + "%s has left the chat." % clients[client][0]).encode())
+        user = "%s has left the chat." % clients[client][0]
+        length = msg_len(user)
+        broadcast(f"SysCmd{length}NOBGCL1{user}000")
     if delete:
         print(f"Deleted {clients[client]}")
         del clients[client]
         del addresses[client]
         print(f"{len(clients.values())} Users remaining")
-    client.send("Kindly, leave".encode())
+        # Type     Length   Colour  Display   Message
+    client.send(("SysCmd" + "013" + "FFFFFF" + "0" + "Kindly, leave" + "000").encode())
 
 
 def close_server():
@@ -128,46 +155,117 @@ def encode(txt, key):
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
-def handle_command(msg, client):
+def send_update(start_chain, end_chain):
+    chain = "SysCmd" if start_chain else ""
+
+    # No need for type because chain has already begun.
+    data = f"Update user_num,{str(len(clients.values())).zfill(2)}"
+    header = msg_len(data) + "FFFFFF" + "0"
+    chain += header + data
+
+    # No need for type because chain has already begun.
+    data = f"Update members{'+'.join([x[0] for x in clients.values()])}"
+    header = msg_len(data) + "FFFFFF" + "0"
+    chain += header + data
+    broadcast(chain)
+    if end_chain:
+        print("Updated with kill")
+        broadcast("000")  # kill command chain
+
+
+def handle_command(data, client):
     """
-    :param msg: The message
+    :param data: The message
     :param client: The client being handled.
     If the user has sent a command, instead of a normal message -
     we need to handle it properly.
     """
-
     print(f'Client {clients[client][0]}, {"is" if clients[client][1] else "is not"} an admin.')
-    print(f'They have executed the command {msg} ({msg.strip().split(" ")})')
+    print(f'They have executed the command {data} ({data.strip().split(" ")})')
     # For me to know what you're up to.
 
     # split command into args
-    args = msg.strip().split(" ")
+    args = data.strip().split(" ")
     args = list(filter(None, args))
     # first arg is the command name, after the '/'
-    command = args[0][1:]
+    command = args[0][len(cmd_prefix):]
 
-    '''
-    User is dumb
-    '''
-    print(args)
     if args[0].find("usage_") == 1:
-        msg = msg[len(COMMAND_PREFIX) + len("usage_"):]
-        command = msg.split(" ")[0]
+        data = data[len(cmd_prefix) + len("usage_"):]
+        command = data.split(" ")[0]
         if not clients[client][1]:  # if not admin, send only valid commands
             if usage[command][:6] == "admin_" or command not in usage:
-                return "{System} Usage: ".encode() + "Not a valid command".encode()
-            return "{System} Usage: ".encode() + usage[command].encode()
+                return "Usage: Not a valid command", "AA0404"
+            return f"Usage: {usage[command]}", "NOBGCL"
 
-    elif clients[client][1]:
-        # Admin commands
-        if command == "close" or command == "end":
+    if command in ["w", "whisper"]:
+        recipient_name = args[1]
+        recipient = get_client(recipient_name)
+        if recipient == client:
+            return "You can't message yourself, dummy", colours['pink']
+
+        if recipient != "invalid":
+            data = "Message from " + clients[client][0] + ": " + ' '.join(args[2:])
+            length = msg_len(data)
+            color = colours['whisper-gray']
+            type = "SysCmd"
+            recipient.send((type+length+color+"1"+data+"000").encode())
+            return f"Message to {clients[recipient][0]}: {' '.join(args[2:])}", color
+        else:
+            data = "The recipient is not connected!"
+            return data, colours['pink']
+
+    is_admin = clients[client][1]
+
+    '''
+    Logging in as admin
+    We need to check if user is already an admin or not,
+    and receive the password.
+    '''
+    if command == "login":
+        if is_admin:
+            data = "You're already admin!"
+            color = colours['orange-warning']
+            return data, color
+        else:
+            print(f"Logging {clients[client][0]} in")
+
+            retrieve_key()
+            print(''.join(args[1:]), KEY[0])
+            passw = encode(''.join(args[1:]), KEY[0])
+            clients[client] = [clients[client][0], passw == admin_password]
+            success = passw == admin_password
+            print('Logged in!' if success else "Login failed.")
+
+            data = 'Logged in!' if success else "Login failed."
+            color = colours['low-green'] if success else colours['red']
+
+            return data, color
+
+    '''
+    Admin commands,
+    close/end/kick/boot
+    '''
+    if not is_admin and command in ["end", "close", "color", "boot", "kick", "logout"]:
+        data = "You don't have access to this command."
+        color = colours['red']
+        return data, color
+    if is_admin:
+        if command in ["end", "close"]:
             try:
                 server_up[0] = False
                 close_server()
             except OSError:
                 pass
 
-        if command == "kick":
+        if command == "color":
+            return f"[color]{clients[client][0]}: {' '.join(args[2:])}", args[1][1:]
+
+        if command == "logout":
+            clients[client][1] = False
+            return "Logged out.", colours['low-green']
+
+        if command in ["boot", "kick"]:
             recipient_name = args[1]
             # Are we kicking an ip or a name?
             if search(r"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?\.){4}"[:-1], recipient_name):
@@ -183,97 +281,37 @@ def handle_command(msg, client):
                 kick(recipient, message=True, custom=kick_msg, cl=True)
                 # it's gonna say that he left anyway so cl is true here
 
-                mess1 = "{System} ".encode() + f"Update user_num,{len(clients.values())}".encode()
-                mess2 = "{System} ".encode() + f"Update members{'+'.join([x[0] for x in clients.values()])}".encode()
-                broadcast(mess1 + mess2)
+            send_update(start_chain=True, end_chain=True)
 
-                broadcast("{System} ".encode() + f"{recipient_name} was kicked by {clients[client][0]}"
-                                                 f"{'' if kick_msg == '' else ' for ' + kick_msg}".encode())
-                return "don't".encode()
-            else:
-                return f'That recipient is not connected.'.encode()
-
-
-    '''
-    Logging in as admin
-    We need to check if user is already an admin or not,
-    and receive the password.
-    '''
-    if command == "login":
-        if clients[client][1]:
-            client.send(("{System} " "You're already admin! Want to log out? y/N".encode()))
-            login = client.recv(BUFSIZ).decode().lower()
-            if login == "y" or login == "yes":
-                clients[client][1] = False
-            else:
-                return "Canceled.".encode()
-        else:
-            print(f"Logging {clients[client][0]} in")
-
-            retrieve_key()
-            print(''.join(args[1:]), KEY[0])
-            passw = encode(''.join(args[1:]), KEY[0])
-            clients[client] = [clients[client][0], passw == admin_password]
-            print('Logged in!' if passw == admin_password else "Login failed.")
-            return 'Logged in!'.encode() if passw == admin_password else "Login failed.".encode()
-
-    if command == "w" or command == "whisper":
-        recipient_name = args[1]
-        recipient = get_client(recipient_name)
-        if recipient == client:
-            return "You can't message yourself, dummy".encode()
-
-        if recipient != "invalid":
-            recipient.send(("Message from " + clients[client][0] + ": " + ' '.join(args[2:])).encode())
-        else:
-            return f'That recipient is not connected.'.encode()
-
-        return f'Direct message to: {recipient_name} - {" ".join(args[2:])}'.encode()
-
-    if command == "help" or command == "commands":
-        return (command_list + admin_cmd_list).encode() if clients[client][1] else command_list.encode()
-
-    if command == "nick" or command == "nickname":
-        if len(args) > 1:
-            recipient_name = args[1]
-            banned_keywords = ["{System}", "@", ":", COMMAND_PREFIX]
-
-            if len([x for x in banned_keywords if recipient_name.find(x) != -1]) != 0:
-                return "Invalid nickname".encode()
-
-            recipient = get_client(recipient_name)
-
-            if recipient == "invalid":
-                prev_name = clients[client][0]
-                clients[client][0] = "_".join(word for word in args[1:] if word != "")
-
-                mess1 = "{System} ".encode() + f"Update user_num,{len(clients.values())}".encode()
-                mess2 = "{System} ".encode() + f"Update members{'+'.join([x[0] for x in clients.values()])}".encode()
-
-                broadcast(mess1 + mess2)
-
-                broadcast(("{System} " + f'{prev_name} changed to {clients[client][0]}\n').encode())
-                return "Nickname Updated.".encode()
-            else:
-                return f'That name is taken.'.encode()
-        else:
-            return "Must enter a nickname.".encode()
-
-    # Currently online users
-    if command == "current" or command == "online":
-        return (str(len(clients)) + ' users online, ').encode() + ' | '.join([x[0] for x in clients.values()]).encode()
-    return "Invalid Command".encode()
+    return "No Command Activated", "NOBGCL"
 
 
 def handle_client(client):  # Takes client socket as argument.
     """Handles a single client connection."""
     try:
-        name = client.recv(BUFSIZ).decode()
-        banned_words = ["{System}", "@", ":", COMMAND_PREFIX] + [x[0] for x in clients.values()]
-        while len([key_word for key_word in banned_words if name.find(key_word) != -1]) != 0:
-            print(name, [key_word for key_word in banned_words if name.find(key_word) != -1])
-            client.send("Invalid nickname, the name is either taken\nor it has an illegal character".encode())
-            name = client.recv(BUFSIZ).decode()
+        name = client.recv(50).decode()
+        banned_words = ["@", ":", COMMAND_PREFIX] + [x[0] for x in clients.values()]
+
+        client.send("SysCmd".encode())  # start command chain
+
+        banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
+
+        while len(banned_words_used) != 0 or (len(name) > 16 or len(name) < 3):
+            if len(name) > 16 or len(name) < 3:
+                data = "Name must be between 3-16 characters"
+                # 3-Length 6-Color 1-Display || Data
+                header = msg_len(data) + "DD0909" + "1"
+                client.send((header + data).encode())
+            else:
+                data = "Invalid nickname, the name is either taken\nor it has an illegal character"
+                # 3-Length 6-Color 1-Display || Data
+                header = msg_len(data) + "DD0909" + "1"
+                client.send((header + data).encode())
+            print(f"Illegal login attempt: {name} || {banned_words_used}")
+            name = client.recv(50).decode()
+            banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
+
+        # client.send("000".encode())  # terminate command chain by sending command length 0.
 
     except ConnectionResetError:  # 10054
         print("Client error'd out.")
@@ -281,31 +319,48 @@ def handle_client(client):  # Takes client socket as argument.
     else:
         connection_working = True
         print("Handling client")
-        welcome = "{System} " + 'Welcome %s! If you ever want to quit, type quit() or press [X] to exit.' % name
-        client.send(welcome.encode())
-        msg = "{System} " + "%s has joined the chat!" % name
-        broadcast(msg.encode())
+        data = 'Welcome %s! If you ever want to quit, type quit() or press [X] to exit.' % name
+
+        header = msg_len(data) + "NOBGCL" + "1"
+        # 6-Type 3-Length 6-Color 1-Display || Data
+        client.send((header + data + "000").encode())
+
+        data = "%s has joined the chat!" % name
+        header = "SysCmd" + msg_len(data) + colours['low-green'] + "1"
+        broadcast(header + data)
+        broadcast("000")
         clients[client] = [name.replace(" ", "_"), False]
 
-        mess1 = "{System} ".encode() + f"Update user_num,{len(clients.values())}".encode()
-        mess2 = "{System} ".encode() + f"Update members{'+'.join([x[0] for x in clients.values()])}".encode()
-
-        broadcast(mess1 + mess2)
+        # Chain already started in previous broadcast
+        send_update(start_chain=True, end_chain=True)
 
         while server_up[0]:
-            print(server_up)
+            length, msg_type, color = 0, "", ""
             try:
-                msg = client.recv(BUFSIZ)
+                print(f'Entire buffer: {client.recv(1000, MSG_PEEK)}')
+                length, msg_type, color = int(client.recv(3)), client.recv(6).decode(), client.recv(6).decode()
+
+                data = client.recv(length).decode()
+                print(F"{clients[client][0]}: {data}")
             except ConnectionResetError:  # 10054
                 connection_working = False
             except ConnectionAbortedError:
                 connection_working = False
 
-            if connection_working and msg != "quit()".encode():
-                if chr(msg[0]).encode() == COMMAND_PREFIX.encode():
-                    client.send("{System} ".encode() + handle_command(msg.decode(), client))
+            if connection_working and data != "quit()":
+                if msg_type == "Normal":
+                    # 6-Type 3-Length 6-Color || Data  # normal message always displayed
+                    header = "Normal" + str(len(f"{clients[client][0]}: {data}".encode())).zfill(3) + color
+                    broadcast(header + clients[client][0] + ": " + data)
                 else:
-                    broadcast(msg, clients[client][0] + ": ")
+                    data, color = handle_command(data=data, client=client)
+                    header = "SysCmd" + str(len(data.encode())).zfill(3) + color + "1"
+                    if msg_type == "EvrCmd":
+                        broadcast(header + data + "000")
+
+                    elif msg_type == "SlfCmd":
+                        client.send((header + data + "000").encode())
+
             else:
                 try:
                     kick(client, message=False, delete=True, cl=False)
@@ -320,11 +375,11 @@ def handle_client(client):  # Takes client socket as argument.
                 break
 
 
-def broadcast(msg, prefix=""):  # prefix is for name identification.
+def broadcast(msg):
     """Broadcasts a message to all the clients."""
     for sock in clients:
         try:
-            sock.send(prefix.encode() + msg)
+            sock.send(msg.encode())
         except ConnectionResetError:  # 10054
             pass
 
