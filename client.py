@@ -10,6 +10,8 @@ import time
 from pyperclip import copy
 
 # ----Functionality---- #
+current_window = 0
+mode = "none"
 typing_my_name = [True]  # fix global
 command_prefix = "/"
 name = ""
@@ -79,13 +81,30 @@ def find_index(lst, item):
 
 def on_closing(tk_obj, messenger=None, event=None):
     """This function is to be called when the window is closed."""
-    if last_item[0] != 0 and messenger and not typing_my_name[0]:
-        messenger.set("quit()")
-        send(messenger)
-    elif typing_my_name[0] and last_item[0] != 0:
-        select_server(tk_obj)
-    else:
+    global current_window, mode
+    # 0 = mode select
+    # 1 = LAN mode select
+    # 2 = WAN mode select
+    # 3 = chatter window
+    if current_window == 0:
         tk_obj.destroy()
+
+    if current_window in [1, 2]:
+        mode_select(tk_obj)
+
+    if current_window == 3:
+        if typing_my_name[0]:
+            # Still writing name, so we can't send quit message.
+            if mode == "custom":
+                custom_server_select(tk_obj)
+                current_window = 2
+            else:
+                server_list(tk_obj)
+                current_window = 1
+        else:
+            # Already wrote my name
+            messenger.set("quit()")
+            send(messenger)
 
 
 def encrypt_few_words(msg, start=0, end=-1):
@@ -103,53 +122,76 @@ def format_message(args):
     args = list(filter(None, args))  # remove extra spaces
 
     color = "NOBGCL"
-    type = "Normal"
+    msg_type = "Normal"
+    if msg == f"{command_prefix}update_key":
+        update_key(True)
+        msg = ""
 
     if msg == "quit()":
-        return msg_len(msg.encode()), type, color, msg
+        return msg_len(msg.encode()), msg_type, color, msg
 
-    everyone_commands = ["nick", "nickname", "kick", "color"]
-    you_commands = ["w", "whisper", "current", "online", "login", "logout", "block"]
+    everyone_commands = ["kick", "color"]
+    you_commands = ["w", "whisper", "current", "online",
+                    "login", "logout", "block", "nick",
+                    "nickname", "help", "commands", "purge",
+                    "reminder"]
 
     command = args[0][len(command_prefix):]
     if typing_my_name[0]:
         msg = "_".join(args)
         length = msg_len(msg)
         color = "04CC04"
-        return length, type, color, "_".join(args)
+        return length, msg_type, color, "_".join(args)
     if command in everyone_commands:
-        type = "EvrCmd"
+        msg_type = "EvrCmd"
         color = "904010"
 
         if command in ["nick", "nickname"]:
-            name = '_'.join(args[1:])
-            msg = f'{args[0]} {name}'
-
-        if command == "kick":
-            color = "AA0000"
-            msg = encrypt_few_words(msg, 2)
+            if len(args) < 3:
+                msg = f"usage_{command}"
+            else:
+                name = '_'.join(args[1:])
+                msg = f'{args[0]} {name}'
 
         if command == "color":
-            if search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', args[1]):
-                color = args[1][1:]
-                msg = encrypt_few_words(' '.join(args), 2)
+            if len(args) < 3:
+                msg = f"usage_{command}"
             else:
-                msg = ""  # invalid, will not send
+                if search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', args[1]):
+                    color = args[1][1:]
+                    msg = encrypt_few_words(' '.join(args), 2)
+                else:
+                    msg = "usage_color"  # invalid, will not send
+
+        if command == "kick":
+            if len(args) < 2:
+                msg = f"usage_{command}"
+            else:
+                color = "AA0000"
+                msg = encrypt_few_words(msg, 2)
 
     elif command in you_commands:
-        type = "SlfCmd"
+        msg_type = "SlfCmd"
+
         if command in ["w", "whisper"]:
-            color = "ab9aa0"
-            msg = encrypt_few_words(msg, 2)
+
+            if len(args) < 3:
+                msg = f"usage_{command}"
+            else:
+                color = "ab9aa0"
+                msg = encrypt_few_words(msg, 2)
 
         if command == "login":
-            msg = encrypt_few_words(msg, 1)
+            if len(args) < 2:
+                msg = f"usage_{command}"
+            else:
+                msg = encrypt_few_words(msg, 1)
     else:
         # Normal message
         msg = encrypt_few_words(msg)
 
     length = msg_len(msg.encode())
-    return length, type, color, msg
+    return length, msg_type, color, msg
 
 
 def update_key(force=False):
@@ -167,9 +209,14 @@ def update_key(force=False):
 
 
 def handle_incoming_command(data, tk_obj):
-
+    global mode
     if data[:7] == "[color]":
         return encrypt_few_words(data[7:], 1)
+
+    elif data.find("Purge") != -1:
+        number = int(data.split(' ')[1])
+        msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
+        purge(number, msg_list)
 
     elif data[:len("Kicked")] == "Kicked":
         reason = find_end(data, ". ") == 1
@@ -178,7 +225,12 @@ def handle_incoming_command(data, tk_obj):
                                 f"Reason: {encrypt_few_words(data[find_end(data, 'Kicked. Reason:')], 2)}")
         else:
             mb.showinfo("Info", "Oh no! You've been kicked.")
-        select_server(tk_obj)
+
+        if mode == "custom":
+            custom_server_select(tk_obj)
+        else:
+            server_list(tk_obj)
+        return
 
     elif data.find("was kicked by") != -1:
         # Name was kicked by Name for Reason
@@ -205,8 +257,25 @@ def handle_incoming_command(data, tk_obj):
         data = encrypt_few_words(data, 3)
         print(f'Decrypting... ->  {data}')
 
+    # nickname change
+    # elif data.find("renamed to") != -1:
+    #     found_nicks = [x for x in list(search(r"^(.+) renamed to (.+)", data).groups())]
+    #     data = f'{found_nicks[0]} renamed to: {found_nicks[1]}'
+
+    # current users online
+    elif data.find("users online") != -1:
+        before = data[:find_end(data, "users online")] + ":\n"
+        after = " | ".join([x for x in data[len(before) - 1:].split(" | ")])
+        data = before + after
+
+    elif data[:find_end(data, "[color]")] == "[color]":
+        data = encrypt_few_words(data[7:], 1)
+
     elif data == "Kindly, leave":
-        select_server(tk_obj)
+        if mode == "custom":
+            custom_server_select(tk_obj)
+        else:
+            server_list(tk_obj)
         return
 
     return data
@@ -220,13 +289,23 @@ def black_or_white(color):
     return "#000000" if red * 0.299 + green * 0.587 + blue * 0.114 > 186 else "#ffffff"
 
 
+def purge(amount, listbox):
+    start = listbox.size() - amount
+    if start < 3:
+        start = 3
+        listbox.delete(start, listbox.size() - 1)
+        listbox.insert(tk.END, "Can't delete first 3 messages")
+    else:
+        listbox.delete(start, listbox.size() - 1)
+
+
 def receive(tk_obj, client_sock):
     while True:
         update_key()
         try:
             msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
             msg_list.see("end")
-            data = "hehehe"
+            data = "NO DATA"
             color = "#BBBBBB"
 
             # accessing all the damn frames and that
@@ -278,7 +357,7 @@ def receive(tk_obj, client_sock):
                 color = client_socket.recv(6).decode()
                 msg = client_sock.recv(int(size)).decode()
                 current_user = msg[:msg.find(": ")]
-                msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ')+2:])}"
+                msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ') + 2:])}"
                 for line in msg.split("\n"):
                     try:
                         msg_list.insert(tk.END, line)
@@ -331,10 +410,10 @@ def send(input_msg, event=None):
     if get == "":
         return
     update_key()
-    length, type, color, data = format_message(get.split(" "))
+    length, msg_type, color, data = format_message(get.split(" "))
     msg = data
     if not typing_my_name[0]:
-        msg = f"{length}{type}{color}{data}"
+        msg = f"{length}{msg_type}{color}{data}"
         print(F"\n\nSent:{msg}\n")
     input_msg.set("")
     if length != "000":
@@ -346,6 +425,7 @@ def resize_font(message_list, event=None):
     size = 5 if size < 6 else size
     try:
         message_list['font'] = ("Varela Round", size)
+        message_list.see("end")
     except tk.TclError:
         pass
 
@@ -409,13 +489,16 @@ def chat_room(tk_obj):
     tk_obj.bind("<Configure>", lambda event: resize_font(msg_list, event))
 
 
-def select_server(tk_obj):
+def custom_server_select(tk_obj):
+    global current_window
+    current_window = 2
+
     typing_my_name[0] = True
     last_item[0] = 0
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.iconbitmap('./images/list.ico')
-    tk_obj.title("Choose Server")
+    tk_obj.title("Choose Server WAN")
     tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj))
     # setting window size
     width = 800
@@ -426,7 +509,7 @@ def select_server(tk_obj):
     tk_obj.geometry(alignstr)
     tk_obj.resizable(width=False, height=False)
 
-    image1 = Image.open("./images/bg.png")
+    image1 = Image.open("./images/bg_1.png")
     x = image1.resize((800, 450), Image.ANTIALIAS)
     test = ImageTk.PhotoImage(x)
     background = tk.Label(tk_obj, image=test)
@@ -447,13 +530,122 @@ def select_server(tk_obj):
     confirm.place(x=275, y=345, width=250, height=45)
 
 
+def join_all(threads, timeout):
+    """
+    Args:
+        threads: a list of thread objects to join
+        timeout: the maximum time to wait for the threads to finish
+    Raises:
+        RuntimeError: is not all the threads have finished by the timeout
+    """
+    start = cur_time = time.time()
+    while cur_time <= (start + timeout):
+        for thread in threads:
+            if thread.is_alive():
+                thread.join(timeout=0)
+        if all(not t.is_alive() for t in threads):
+            break
+        time.sleep(0.1)
+        cur_time = time.time()
+    else:
+        print("Force timeout after 5 seconds.")
+        #     still_running = [t for t in threads if t.is_alive()]
+        #     num = len(still_running)
+        #     print(f'Timeout on {num} servers. Removing from list.')
+
+
+def check_option(item, working_connections):
+    check = socket(AF_INET, SOCK_STREAM)
+    ip = item[0]
+    port = int(item[1])
+    try:
+        check.connect((ip, port))
+    except Exception as e:
+        print(f'Timeout: {ip}:{port} - Flagging as inactive.\n')
+        req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
+    else:
+        working_connections.append([item[0], item[1]])
+    finally:
+        check.close()
+
+
+def verify_connections(server_list):
+    connections = req.get('https://get-api-key-2021.herokuapp.com').json()['connections']
+    working_connections = []
+    threads = []
+    for item in connections:
+        check_thread = Thread(target=lambda: check_option(item, working_connections))
+        threads.append(check_thread)
+        check_thread.start()
+
+    join_all(threads, 4)
+    # force timeout after 4 seconds.
+
+    server_list.delete(0, tk.END)  # delete all users
+    for address in working_connections:
+        ip = address[0]
+        port = address[1]
+        server_list.insert(tk.END, f"{ip}:{port}")
+
+
+def get_selection_confirm(tk_obj, list):
+    selection = list.curselection()
+    if selection:
+        index = selection[0]
+        text = list.get(index)
+        ip = text[:text.find(":")]
+        port = int(text[text.find(":") + 1:])
+        print(ip, port)
+        confirm_config(tk_obj, ip, port)
+
+
+def server_list(tk_obj):
+    global current_window
+    current_window = 2
+
+    typing_my_name[0] = True
+    last_item[0] = 0
+    for child in tk_obj.winfo_children():
+        child.destroy()
+    tk_obj.iconbitmap('./images/list.ico')
+    tk_obj.title("Choose Server LAN")
+    tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj))
+    # setting window size
+    width = 800
+    height = 450
+    screenwidth = tk_obj.winfo_screenwidth()
+    screenheight = tk_obj.winfo_screenheight()
+    alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
+    tk_obj.geometry(alignstr)
+    tk_obj.resizable(width=False, height=False)
+
+    image1 = Image.open('./images/server_select.png')
+    x = image1.resize((800, 450), Image.ANTIALIAS)
+    test = ImageTk.PhotoImage(x)
+    background = tk.Label(tk_obj, image=test)
+    background.image = test
+    background["justify"] = "center"
+    background.place(x=0, y=0, width=800, height=450)
+
+    server_list = tk.Listbox(tk_obj, height=15, width=75, background="#2c2f33",
+                             foreground="white")
+
+    server_list.place(x=180, y=115, width=(660 - 180), height=210)
+
+    verify_connections(server_list)
+
+    refresh = tk.Button(tk_obj, text="Confirm Selection",
+                        command=lambda: get_selection_confirm(tk_obj, server_list), height=2, width=10)
+    refresh.place(x=400, y=365, width=350, height=80)
+
+    refresh = tk.Button(tk_obj, text="Refresh Servers",
+                        command=lambda: verify_connections(server_list), height=2, width=10)
+    refresh.place(x=45, y=365, width=350, height=80)
+
+
 def confirm_config(tk_obj, ip, port):
     global client_socket
-    if ip == "" or "Enter IP":
-        ip = "79.177.33.79"
-        # ip = "10.0.0.12"
-    if port == "" or "Enter PORT":
-        port = 45000
+
     addr = ip, port
     print(f'Connecting to {addr}...')
     client_socket = socket(AF_INET, SOCK_STREAM)
@@ -463,7 +655,46 @@ def confirm_config(tk_obj, ip, port):
     receive_thread.start()
 
 
+def mode_select(tk_obj):
+    global current_window
+    current_window = 0
+
+    typing_my_name[0] = True
+    last_item[0] = 0
+    for child in tk_obj.winfo_children():
+        child.destroy()
+    tk_obj.iconbitmap('./images/list.ico')
+    tk_obj.title("Choose Server LAN")
+    tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj))
+    # setting window size
+    width = 800
+    height = 450
+    screenwidth = tk_obj.winfo_screenwidth()
+    screenheight = tk_obj.winfo_screenheight()
+    alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
+    tk_obj.geometry(alignstr)
+    tk_obj.resizable(width=False, height=False)
+
+    image1 = Image.open("./images/bg_1.png")
+    x = image1.resize((800, 450), Image.ANTIALIAS)
+    test = ImageTk.PhotoImage(x)
+    background = tk.Label(tk_obj, image=test)
+    background.image = test
+    background["justify"] = "center"
+    background.place(x=0, y=0, width=800, height=450)
+
+    wan_buttom = tk.Button(tk_obj, text="Custom Entry",
+                           command=lambda: custom_server_select(tk_obj), height=2, width=10)
+
+    wan_buttom.place(x=80, y=170, width=290, height=150)
+
+    lan_buttom = tk.Button(tk_obj, text="Server list",
+                           command=lambda: server_list(tk_obj), height=2, width=10)
+
+    lan_buttom.place(x=410, y=170, width=290, height=150)
+
+
 if __name__ == "__main__":
     app = tk.Tk()
-    select_server(app)
+    mode_select(app)
     app.mainloop()
