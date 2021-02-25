@@ -9,6 +9,7 @@ KEY = [0]
 last_update = 0
 server_up = [True]
 cmd_prefix = "/"
+
 colours = {
     "red": "dd0404",
     "pink": "ff6666",
@@ -20,6 +21,7 @@ colours = {
     "whisper-gray": "ab9aa0",
     "white": "FFFFFF"
 }
+
 usage = {
     "nick": "/nick <new name>: Rename Yourself!",
     "nickname": "/nickname <new name>: Rename Yourself!",
@@ -38,19 +40,22 @@ usage = {
     "end": "admin_/end: Ends server lol",
     "close": "admin_/end: Ends server lol"
 }
-command_list = "Command List:\n" + \
-               "/nick or /nickname <new name>: Rename Yourself!\n" + \
-               "/w or /whisper <name>: whisper to someone\n" + \
-               "/online or /current: show who's online!\n" + \
-               "/purge <number>: delete the last X lines\n" + \
-               "/update_key: Force update your key\n" + \
-               "/reminder <seconds>: Remind you to talk after x seconds.\n" + \
-               "/login <password>: Try logging in as admin."
 
-admin_cmd_list = "/end, or /close: closes server\n" + \
-                 "/boot or /kick: kicks a user by username\n" + \
-                 "/color <#colour>: send message with bg colour\n" + \
-                 "/logout: exit admin mode."
+command_list = ["Command List:",
+                "/nick or /nickname <new name>: Rename Yourself!",
+                "/w or /whisper <name>: whisper to someone",
+                "/online or /current: show who's online!",
+                "/purge <number>: delete the last X lines",
+                "/update_key: Force update your key",
+                "/reminder <seconds>: Remind you to talk after x seconds",
+                "/login <password>: Try logging in as admin."]  # I do this so you can minimize the list
+command_list = "\n".join(command_list)
+
+admin_cmd_list = ["/end, or /close: closes server",
+                  "/boot or /kick: kicks a user by username",
+                  "/color <#colour>: send message with bg colour",
+                  "/logout: exit admin mode."]  # I do this so you can minimize the list
+admin_cmd_list = "\n".join(admin_cmd_list)
 
 admin_password = "danIsTheKing"
 
@@ -58,17 +63,32 @@ COMMAND_PREFIX = "/"
 
 
 def msg_len(data):
+    """
+    :param data: The data we're getting the length of
+    :return: Length of the encoded data, left-padded to be 3 digits long.
+    """
     return str(len(data.encode())).zfill(3)
 
 
 def accept_incoming_connections():
-    """Sets up handling for incoming clients."""
+    """
+    First checks if a connection is a server-scanner or a client.
+    If it's a user, it accepts the connection and sends them a welcome message.
+    Then, we start a thread for that user and handle their input.
+    """
     while server_up[0]:
         try:
             client, client_address = SERVER.accept()
+            user_mode = client.recv(1).decode()
+            # 0 -> checker
+            # 1 -> user
+            if user_mode == "0":
+                print(f"We've been scanned and found by {client_address}")
+                continue
+
             print(f"{client_address} has connected.")
             data = "Greetings from the cave! Now type your name and press enter!\n" \
-                   "After you login, Enter /help or /commands to see the command list!\n" \
+                   "After you login, Enter /help or /commands to see the command collection_list!\n" \
                    "If someone's text is jumbled up, please ask them to use /update_key."
             header = "SysCmd" + msg_len(data) + "NOBGCL" + "1"
             client.send((header + data + "000").encode())
@@ -82,17 +102,31 @@ def accept_incoming_connections():
 
 
 def call_repeatedly(interval, func, *args):
+    """
+    Used to check if the user hasn't talked for X seconds.
+
+    :param interval: The interval between the checks
+    :param func: Function to run at said interval
+    :param args: Arguments for command
+    :return: When called, stops the looping.
+    """
     stopped = Event()
 
     def loop():
         while not stopped.wait(interval):  # the first call is in `interval` secs
             func(*args)
-        print("oh boy")
+
     Thread(target=loop).start()
     return stopped.set
 
 
 def why_arent_you_talking(client):
+    """
+    Checks the time between the user's last message and now,
+    if over the specified time, send a message.
+    :param client: client being checked
+    :return: None
+    """
     current_time = int(time.time())
     if current_time - clients[client][2] > clients[client][3]:
         data = f"Oi mate, you haven't talked for {clients[client][3]} seconds; Look alive!"
@@ -105,6 +139,8 @@ def get_client(val, ip=False):
     """
     :param val: name to search
     :param ip: Search by ip? (default off)
+    :return Client OBJ
+    Gets client by name or IP
     """
     if ip:
         for key, value in addresses.items():
@@ -134,7 +170,7 @@ def retrieve_key(force=False):
 def kick(client, delete=True, cl=False, message=True, custom=""):
     """
     :param client: The client being kicked/removed
-    :param delete: Delete the client from the client list
+    :param delete: Delete the client from the client collection_list
     :param cl:  The server is being closed, so no need to say who left.
     :param message: Do we tell them they're kicked or no?
     :param custom: Custom kick message
@@ -163,8 +199,10 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
 
 
 def close_server():
-    # Close the server, kicking everyone
-
+    """
+    Closes the server by kicking everyone, then deleting them.
+    :return: None
+    """
     for x in clients:
         try:
             kick(x, False, True)
@@ -182,6 +220,13 @@ def encode(txt, key):
 
 
 def send_update(start_chain, end_chain):
+    """
+    :param start_chain: Start a command chain (SysCmd)
+    :param end_chain: End the command chain (000)
+    :return: None
+    Broadcasts to all users to update the user number, and user list
+    This happens when a nickname is changed, or a user joins/leaves.
+    """
     chain = "SysCmd" if start_chain else ""
 
     # No need for type because chain has already begun.
@@ -299,9 +344,8 @@ def handle_command(data, client):
             print(f"Logging {clients[client][0]} in")
 
             retrieve_key()
-            print(''.join(args[1:]), KEY[0])
             passw = encode(''.join(args[1:]), KEY[0])
-            clients[client] = [clients[client][0], passw == admin_password]
+            clients[client][1] = passw == admin_password
             success = passw == admin_password
             print('Logged in!' if success else "Login failed.")
 
@@ -372,7 +416,12 @@ def handle_command(data, client):
 
 
 def handle_client(client):  # Takes client socket as argument.
-    """Handles a single client connection."""
+    """
+    Handles a single client connection.
+    This is done by first registering a valid name.
+    Then we handle every message, from normal, Commands everyone can see,
+    and commands only the user can see.
+    """
     try:
         name = client.recv(50).decode()
         banned_words = ["@", ":", COMMAND_PREFIX] + [x[0] for x in clients.values()]
@@ -392,10 +441,11 @@ def handle_client(client):  # Takes client socket as argument.
                 # 3-Length 6-Color 1-Display || Data
                 header = msg_len(data) + "DD0909" + "1"
                 client.send((header + data).encode())
-            print(f"Illegal login attempt: {name} || {banned_words_used}")
+            if name:
+                print(f"Illegal login attempt: {name} || {banned_words_used}")
             name = client.recv(50).decode()
             banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
-
+        print(f"{client}\n has registered as {name}")
         # client.send("000".encode())  # terminate command chain by sending command length 0.
 
     except ConnectionResetError:  # 10054
@@ -407,7 +457,6 @@ def handle_client(client):  # Takes client socket as argument.
         pass
     else:
         connection_working = True
-        print("Handling client")
         data = 'Welcome %s! If you ever want to quit, type quit() or press [X] to exit.' % name
 
         header = msg_len(data) + "NOBGCL" + "1"
@@ -429,47 +478,49 @@ def handle_client(client):  # Takes client socket as argument.
 
         # Chain already started in previous broadcast
         send_update(start_chain=True, end_chain=True)
-
-        while server_up[0]:
-            length, msg_type, color = 0, "", ""
-            try:
-                # print(f'Entire buffer: {client.recv(1000, MSG_PEEK)}')
-                length, msg_type, color = int(client.recv(3)), client.recv(6).decode(), client.recv(6).decode()
-
-                data = client.recv(length).decode()
-                clients[client][2] = int(time.time())
-                print(F"{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
-            except ConnectionResetError:  # 10054
-                connection_working = False
-            except ConnectionAbortedError:
-                connection_working = False
-
-            if connection_working and data != "quit()":
-                if msg_type == "Normal":
-                    # 6-Type 3-Length 6-Color || Data  # normal message always displayed
-                    header = "Normal" + str(len(f"{clients[client][0]}: {data}".encode())).zfill(3) + color
-                    broadcast(header + clients[client][0] + ": " + data)
-                else:
-                    data, color = handle_command(data=data, client=client)
-                    header = "SysCmd" + str(len(data.encode())).zfill(3) + color + "1"
-                    if msg_type == "EvrCmd":
-                        broadcast(header + data + "000")
-
-                    elif msg_type == "SlfCmd":
-                        client.send((header + data + "000").encode())
-
-            else:
+        try:
+            while server_up[0]:
+                length, msg_type, color = 0, "", ""
                 try:
-                    kick(client, message=False, delete=True, cl=False)
+                    # print(f'Entire buffer: {client.recv(1000, MSG_PEEK)}')
+                    length, msg_type, color = int(client.recv(3)), client.recv(6).decode(), client.recv(6).decode()
+
+                    data = client.recv(length).decode()
+                    clients[client][2] = int(time.time())
+                    print(F"{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
                 except ConnectionResetError:  # 10054
-                    print("Client did an oopsie")
-                    del clients[client]
-                except OSError:
-                    print("Client did an oopsie")
-                    del clients[client]
-                except KeyError:
-                    print(f"Tried deleting {client}, but they were already gone. (line 301)")
-                break
+                    connection_working = False
+                except ConnectionAbortedError:
+                    connection_working = False
+
+                if connection_working and data != "quit()":
+                    if msg_type == "Normal":
+                        # 6-Type 3-Length 6-Color || Data  # normal message always displayed
+                        header = "Normal" + str(len(f"{clients[client][0]}: {data}".encode())).zfill(3) + color
+                        broadcast(header + clients[client][0] + ": " + data)
+                    else:
+                        data, color = handle_command(data=data, client=client)
+                        header = "SysCmd" + str(len(data.encode())).zfill(3) + color + "1"
+                        if msg_type == "EvrCmd":
+                            broadcast(header + data + "000")
+
+                        elif msg_type == "SlfCmd":
+                            client.send((header + data + "000").encode())
+
+                else:
+                    try:
+                        kick(client, message=False, delete=True, cl=False)
+                    except ConnectionResetError:  # 10054
+                        print("Client did an oopsie")
+                        del clients[client]
+                    except OSError:
+                        print("Client did an oopsie")
+                        del clients[client]
+                    except KeyError:
+                        print(f"Tried deleting {client}, but they were already gone. (line 301)")
+                    break
+        except Exception as e:
+            print(f"An error has occured.\n{e}")
 
 
 def broadcast(msg):
@@ -489,6 +540,11 @@ while mode not in ["wan", "lan"]:
     print("Invalid.")
     mode = input("WAN server or LAN server?  (wan/lan) > ").lower()
 
+"""
+If mode is lan, then choose a random port and host on NAT
+If mode is wan, assume user has set up port forwarding, 
+and request a port to host the server on.
+"""
 if mode == "lan":
     # LAN server, pick a random port.
     PORT = 0
@@ -497,6 +553,7 @@ if mode == "lan":
     SERVER.bind(ADDR)
     c_ip = gethostbyname(gethostname())
     c_port = SERVER.getsockname()[1]
+    # Add the server to active connections
     req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{c_port}')
 
 else:
@@ -508,18 +565,18 @@ else:
     ADDR = (HOST, port)
     c_ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
-    print(ADDR)
+    # Add the server to active connections
     req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{ADDR[1]}')
-
-
-BUFSIZ = 1024
 
 clients = {}
 addresses = {}
 
 SERVER.listen(5)
 print("Waiting for connection...")
-ACCEPT_THREAD = Thread(target=accept_incoming_connections)
-ACCEPT_THREAD.start()
-ACCEPT_THREAD.join()
+
+# ACCEPT_THREAD = Thread(target=accept_incoming_connections)
+# ACCEPT_THREAD.start()
+# ACCEPT_THREAD.join()
+
+accept_incoming_connections()
 SERVER.close()
