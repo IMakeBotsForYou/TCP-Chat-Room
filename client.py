@@ -102,8 +102,8 @@ def on_closing(tk_obj, messenger=None, event=None):
     """
     global current_window, mode
     # 0 = mode select
-    # 1 = LAN mode select
-    # 2 = WAN mode select
+    # 1 = Server List mode select
+    # 2 = CUSTOM mode select
     # 3 = chatter window
     if current_window == 0:
         tk_obj.destroy()
@@ -123,7 +123,7 @@ def on_closing(tk_obj, messenger=None, event=None):
         else:
             # Already wrote my name
             messenger.set("quit()")
-            send(messenger)
+            send(messenger, tk_obj)
 
 
 def encrypt_few_words(msg, start=0, end=-1):
@@ -147,6 +147,7 @@ def format_message(args):
     :return: formatted length, type, color, and message ready to send.
     """
     global name
+    update_key()
     msg = ' '.join(list(filter(None, args)))  # remove extra spaces
     args = list(filter(None, args))  # remove extra spaces
 
@@ -163,7 +164,7 @@ def format_message(args):
     you_commands = ["w", "whisper", "current", "online",
                     "login", "logout", "block", "nick",
                     "nickname", "help", "commands", "purge",
-                    "reminder"]
+                    "reminder", "time"]
 
     command = args[0][len(command_prefix):]
     if typing_my_name[0]:
@@ -254,11 +255,11 @@ def handle_incoming_command(data, tk_obj):
         msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
         purge(number, msg_list)
 
-    elif data[:len("Kicked")] == "Kicked":
-        reason = find_end(data, ". ") == 1
+    elif data[:6] == "Kicked":
+        reason = find_end(data, ". ") != 1
         if reason:
-            mb.showinfo("Info", f"You've been kicked. "
-                                f"Reason: {encrypt_few_words(data[find_end(data, 'Kicked. Reason:')], 2)}")
+            mb.showinfo("Info", f"You've been kicked.\n"
+                                f"Reason: {encrypt_few_words(data[find_end(data, 'Kicked. Reason: '):])}")
         else:
             mb.showinfo("Info", "Oh no! You've been kicked.")
 
@@ -355,7 +356,7 @@ def receive(tk_obj, client_sock):
     while True:
         update_key()
         try:
-            msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
+            msg_list = tk_obj.winfo_children()[0].winfo_children()[0]
             msg_list.see("end")
             data = "NO DATA"
             color = "#BBBBBB"
@@ -383,16 +384,16 @@ def receive(tk_obj, client_sock):
                     # 1 display | 0 don't display
                     if display == '1':
                         msg = handle_incoming_command(data=data, tk_obj=tk_obj)
-
-                        for line in msg.split("\n"):
-                            try:
-                                msg_list.insert(tk.END, line)
-                                last_item[0] += 1
-                                msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
-                            except tk.TclError:  # server closed
-                                pass
-                            if line.find(f'@{name}') != -1:
-                                msg_list.itemconfig(last_item[0], bg='#C28241')
+                        if msg != "ignore":
+                            for line in msg.split("\n"):
+                                try:
+                                    msg_list.insert(tk.END, line)
+                                    last_item[0] += 1
+                                    msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
+                                except tk.TclError:  # server closed
+                                    pass
+                                if line.find(f'@{name}') != -1:
+                                    msg_list.itemconfig(last_item[0], bg='#C28241')
 
                     else:
                         _ = handle_incoming_command(data=data, tk_obj=tk_obj)
@@ -462,12 +463,12 @@ def go_to_dm(event, entry_field):
         pass
 
 
-def send(input_msg, event=None):
+def send(input_msg, tk_obj, event=None):
     """
     :param input_msg: The entry field, from which we get the message
     :param event: send event (enter, send button)
-    :return:
     """
+    global current_window
     get = input_msg.get()
     if get == "":
         return
@@ -479,7 +480,61 @@ def send(input_msg, event=None):
         print(F"\n\nSent:{msg}\n")
     input_msg.set("")
     if length != "000":
-        client_socket.send(msg.encode())
+        try:
+            client_socket.send(msg.encode())
+        except ConnectionResetError:
+            mb.showinfo("Info", "Server shut down. Returning to server select.")
+            if mode == "custom":
+                custom_server_select(tk_obj)
+                current_window = 2
+            else:
+                server_list(tk_obj)
+                current_window = 1
+
+
+def check_option(item, working_connections):
+    """
+    :param item: current server being checked
+    :param working_connections: list of working servers so far
+    """
+    check = socket(AF_INET, SOCK_STREAM)
+    ip = item[0]
+    port = int(item[1])
+    try:
+        check.connect((ip, port))
+        check.send("0".encode())
+    except:
+        print(f'Timeout: {ip}:{port} - Flagging as inactive.\n', end="")
+        req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
+    else:
+        print(f"Found working server. {item}")
+        working_connections.append([item[0], item[1]])
+    finally:
+        check.close()
+    return len(working_connections)
+
+
+def join_all(threads, timeout):
+    """
+    Args:
+        threads: a list of thread objects to join
+        timeout: the maximum time to wait for the threads to finish
+    Raises:
+        RuntimeError: is not all the threads have finished by the timeout
+    :return Amount of threads who were still active
+    """
+    start = cur_time = time.time()
+    while cur_time <= (start + timeout):
+        for thread in threads:
+            if thread.is_alive():
+                thread.join(timeout=0)
+        if all(not t.is_alive() for t in threads):
+            break
+        time.sleep(0.1)
+        cur_time = time.time()
+    else:
+        print(f"Force timeout after {timeout} seconds.", end="  ")
+        return len([t for t in threads if t.is_alive()])
 
 
 def resize_font(message_list, event=None):
@@ -497,6 +552,97 @@ def resize_font(message_list, event=None):
         pass
 
 
+def confirm_config(tk_obj, ip, port):
+    """
+    :param tk_obj: window to remake
+    :param ip: ip to connect to
+    :param port: port to connect to
+    Remakes the window into the chatroom window if
+    we can connect, if not do nothing.
+    """
+    global client_socket
+    update_key()
+    if ip in ["Enter IP", ""]:
+        print("Must enter IP")
+        return
+    if port in ["Enter PORT", ""]:
+        print("Must enter PORT")
+        return
+    try:
+        port = int(port)
+    except ValueError:
+        print("Port must be int")
+        return
+    addr = ip, int(port)
+    print(f'Connecting to {addr}...')
+    client_socket = socket(AF_INET, SOCK_STREAM)
+    try:
+        client_socket.connect(addr)
+        client_socket.send("1".encode())
+        chat_room(tk_obj)
+        receive_thread = Thread(target=lambda: receive(tk_obj, client_socket))
+        receive_thread.start()
+    except Exception as e:
+        print(f'Try a different server.\n{e}')
+
+
+def verify_connections(server_list):
+    """
+    :param server_list: listbox
+    Loops over ip, port bundles from the heroku API and
+    tries connecting to each.
+    """
+    connections = req.get('https://get-api-key-2021.herokuapp.com').json()['connections']
+    working_connections = []
+    threads = []
+    for item in connections:
+        check_thread = Thread(target=lambda: check_option(item, working_connections))
+        threads.append(check_thread)
+        check_thread.start()
+    
+    # Don't print anything if we didn't timeout any threads
+    prt_str = f'On {join_all(threads, 3)} servers'
+    if prt_str != "On None servers":
+        print(f'On {join_all(threads, 3)} servers')
+
+    # Delete everything, then re-add valid ones
+    server_list.delete(0, tk.END)
+    if len(working_connections) == 0:
+        server_list.insert(tk.END, "No available servers.")
+        server_list.config(state=tk.DISABLED)
+    else:
+        server_list.config(state=tk.NORMAL)
+        server_list.delete(0, tk.END)
+
+    for address in working_connections:
+        ip = address[0]
+        port = address[1]
+        server_list.insert(tk.END, f"{ip}:{port}")
+
+
+def get_selection_confirm(tk_obj, list):
+    """
+    :param tk_obj: TKOBJ to remake
+    :param list: listbox to get selection from
+    Remakes the window into the chatroom window if
+    we can connect, if not, refresh the active
+    server list.
+    """
+    selection = list.curselection()
+    if selection:
+        index = selection[0]
+        text = list.get(index)
+        ip = text[:text.find(":")]
+        port = int(text[text.find(":") + 1:])
+
+        # noinspection PyTypeChecker
+        works = check_option([ip,port], []) == 1
+        if works:
+            confirm_config(tk_obj, ip, port)
+        else:
+            verify_connections(list)
+
+
 def chat_room(tk_obj):
     """
     :param tk_obj: tkinter root
@@ -505,33 +651,34 @@ def chat_room(tk_obj):
     """
     global online_num, current_window
     current_window = 3
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.title("Chatter")
     tk_obj.resizable(width=True, height=True)
     tk_obj.minsize(700, 150)
     tk_obj.attributes("-topmost", True)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     my_msg = tk.StringVar()  # For the messages to be sent.
     my_msg.set("")
     messages_frame = tk.Frame(tk_obj)
     messages_frame.grid(row=0, column=1, columnspan=2, padx=5, pady=10, sticky="ewns")
-    scrollbar = tk.Scrollbar(messages_frame)  # To navigate through past messages.
-    scrollbar.grid(row=0, column=1, sticky="ewns")
 
-    msg_list = tk.Listbox(messages_frame, height=15, width=75, yscrollcommand=scrollbar.set, background="#2c2f33",
+    msg_list = tk.Listbox(messages_frame, height=15, width=75, background="#2c2f33",
                           foreground="white")
     msg_list.insert(tk.END, "Loading you in. This may take a bit.")
     msg_list.bind('<<ListboxSelect>>', lambda event: listbox_copy(event))
 
     # Following will contain the messages.
     entry_field = tk.Entry(messages_frame, textvariable=my_msg)
-    entry_field.bind("<Return>", lambda x: send(my_msg))
+    entry_field.bind("<Return>", lambda x: send(my_msg, tk_obj))
     entry_field.bind('<Control-a>', lambda event: event.widget.select_range(0, 'end'))
 
     entry_field.grid(row=1, column=1, sticky="wnse")
     send_button = tk.Button(messages_frame, text="Send",
-                            command=lambda: send(my_msg), height=2, width=10)
+                            command=lambda: send(my_msg, tk_obj), height=2, width=10)
     send_button.grid(row=1, column=1, sticky="ens")
 
     messages_frame.rowconfigure(0, weight=1)
@@ -573,6 +720,8 @@ def custom_server_select(tk_obj):
 
     typing_my_name[0] = True
     last_item[0] = 0
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.iconbitmap('./images/list.ico')
@@ -594,7 +743,8 @@ def custom_server_select(tk_obj):
     background.image = test
     background["justify"] = "center"
     background.place(x=0, y=0, width=800, height=450)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     ip_field = EntryWithPlaceholder(tk_obj, "Enter IP")
     ip_field.place(x=275, y=200, width=250, height=45)
     ip_field["font"] = ("Helvetica", 24)
@@ -608,106 +758,6 @@ def custom_server_select(tk_obj):
     confirm.place(x=275, y=345, width=250, height=45)
 
 
-def join_all(threads, timeout):
-    """
-    Args:
-        threads: a list of thread objects to join
-        timeout: the maximum time to wait for the threads to finish
-    Raises:
-        RuntimeError: is not all the threads have finished by the timeout
-    :return Amount of threads who were still active
-    """
-    start = cur_time = time.time()
-    while cur_time <= (start + timeout):
-        for thread in threads:
-            if thread.is_alive():
-                thread.join(timeout=0)
-        if all(not t.is_alive() for t in threads):
-            break
-        time.sleep(0.1)
-        cur_time = time.time()
-    else:
-        print(f"Force timeout after {timeout} seconds.")
-        return len([t for t in threads if t.is_alive()])
-        #     num = len(still_running)
-        #     print(f'Timeout on {num} servers. Removing from list.')
-
-
-def check_option(item, working_connections):
-    """
-    :param item: current server being checked
-    :param working_connections: list of working servers so far
-    """
-    check = socket(AF_INET, SOCK_STREAM)
-    ip = item[0]
-    port = int(item[1])
-    try:
-        check.connect((ip, port))
-        check.send("0".encode())
-    except:
-        print(f'Timeout: {ip}:{port} - Flagging as inactive.\n', end="")
-        req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
-    else:
-        print(f"Found working server. {item}")
-        working_connections.append([item[0], item[1]])
-    finally:
-        check.close()
-    return len(working_connections)
-
-
-def verify_connections(server_list):
-    """
-    :param server_list: listbox
-    Loops over ip, port bundles from the heroku API and
-    tries connecting to each.
-    """
-    connections = req.get('https://get-api-key-2021.herokuapp.com').json()['connections']
-    working_connections = []
-    threads = []
-    for item in connections:
-        check_thread = Thread(target=lambda: check_option(item, working_connections))
-        threads.append(check_thread)
-        check_thread.start()
-
-    join_all(threads, 5)
-    # force timeout
-    server_list.delete(0, tk.END)  # delete all servers
-    if len(working_connections) == 0:
-        server_list.insert(tk.END, "No available servers.")
-        server_list.config(state=tk.DISABLED)
-    else:
-        server_list.config(state=tk.NORMAL)
-        server_list.delete(0, tk.END)  # delete all servers
-
-    for address in working_connections:
-        ip = address[0]
-        port = address[1]
-        server_list.insert(tk.END, f"{ip}:{port}")
-
-
-def get_selection_confirm(tk_obj, list):
-    """
-    :param tk_obj: TKOBJ to remake
-    :param list: listbox to get selection from
-    Remakes the window into the chatroom window if
-    we can connect, if not, refresh the active
-    server list.
-    """
-    selection = list.curselection()
-    if selection:
-        index = selection[0]
-        text = list.get(index)
-        ip = text[:text.find(":")]
-        port = int(text[text.find(":") + 1:])
-
-        # noinspection PyTypeChecker
-        works = check_option([ip,port], []) == 1
-        if works:
-            confirm_config(tk_obj, ip, port)
-        else:
-            verify_connections(list)
-
-
 def server_list(tk_obj):
     """
     :param tk_obj: tkinter root
@@ -719,6 +769,8 @@ def server_list(tk_obj):
 
     typing_my_name[0] = True
     last_item[0] = 0
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.iconbitmap('./images/list.ico')
@@ -740,13 +792,12 @@ def server_list(tk_obj):
     background.image = test
     background["justify"] = "center"
     background.place(x=0, y=0, width=800, height=450)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     servers = tk.Listbox(tk_obj, height=15, width=75, background="#2c2f33",
                          foreground="white")
     servers['font'] = ("Varela Round", 24)
     servers.place(x=180, y=115, width=440, height=210)
-
-    verify_connections(servers)
 
     refresh = tk.Button(tk_obj, text="Confirm Selection",
                         command=lambda: get_selection_confirm(tk_obj, servers), height=2, width=10)
@@ -756,38 +807,8 @@ def server_list(tk_obj):
                         command=lambda: verify_connections(servers), height=2, width=10)
     refresh.place(x=50, y=350, width=325, height=80)
 
-
-def confirm_config(tk_obj, ip, port):
-    """
-    :param tk_obj: window to remake
-    :param ip: ip to connect to
-    :param port: port to connect to
-    Remakes the window into the chatroom window if
-    we can connect, if not do nothing.
-    """
-    global client_socket
-    if ip in ["Enter IP", ""]:
-        print("Must enter IP")
-        return
-    if port in ["Enter PORT", ""]:
-        print("Must enter PORT")
-        return
-    try:
-        port = int(port)
-    except ValueError:
-        print("Port must be int")
-        return
-    addr = ip, int(port)
-    print(f'Connecting to {addr}...')
-    client_socket = socket(AF_INET, SOCK_STREAM)
-    try:
-        client_socket.connect(addr)
-        client_socket.send("1".encode())
-        chat_room(tk_obj)
-        receive_thread = Thread(target=lambda: receive(tk_obj, client_socket))
-        receive_thread.start()
-    except Exception as e:
-        print(f'Try a different server.\n{e}')
+    load_servers = Thread(target=verify_connections(servers))
+    load_servers.start()
 
 
 def mode_select(tk_obj):
@@ -798,7 +819,8 @@ def mode_select(tk_obj):
     """
     global current_window
     current_window = 0
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     typing_my_name[0] = True
     last_item[0] = 0
     for child in tk_obj.winfo_children():
@@ -822,7 +844,8 @@ def mode_select(tk_obj):
     background.image = test
     background["justify"] = "center"
     background.place(x=0, y=0, width=800, height=450)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     wan_button = tk.Button(tk_obj, text="Custom Entry",
                            command=lambda: custom_server_select(tk_obj), height=2, width=10)
 
