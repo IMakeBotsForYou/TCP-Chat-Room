@@ -603,7 +603,7 @@ def verify_connections(server_list):
     # Don't print anything if we didn't timeout any threads
     prt_str = f'On {join_all(threads, 3)} servers'
     if prt_str != "On None servers":
-        print(f'On {join_all(threads, 3)} servers')
+        print(prt_str)
 
     # Delete everything, then re-add valid ones
     server_list.delete(0, tk.END)
