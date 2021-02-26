@@ -1,5 +1,5 @@
 """Script for Tkinter GUI chat client."""
-from socket import AF_INET, socket, SOCK_STREAM
+from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK
 from threading import Thread
 from re import search
 import tkinter as tk
@@ -10,6 +10,8 @@ import time
 from pyperclip import copy
 
 # ----Functionality---- #
+current_window = 0
+mode = "none"
 typing_my_name = [True]  # fix global
 command_prefix = "/"
 name = ""
@@ -31,6 +33,12 @@ client_socket = socket(AF_INET, SOCK_STREAM)  # fix global
 
 
 class EntryWithPlaceholder(tk.Entry):
+    """
+    Create an Entry widget with a placeholder text
+    that disappears when focused in, and reappears when
+    focused out
+    """
+
     def __init__(self, master=None, placeholder="PLACEHOLDER", color='grey'):
         super().__init__(master)
 
@@ -57,127 +65,74 @@ class EntryWithPlaceholder(tk.Entry):
             self.put_placeholder()
 
 
+def msg_len(data):
+    """
+    :param data: The data we're getting the length of
+    :return: Length of the encoded data, left-padded to be 3 digits long.
+    """
+    return str(len(data)).zfill(3)
+
+
 def encode(txt, key):
+    """
+    :param txt: text to encrypt
+    :param key: XOR key
+    :return: Encrypted text
+    """
     return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
 def find_end(message, item):
+    """
+    :param message: The message we're searching in
+    :param item: What we're searching
+    :return: The index where the item ends in the string
+    """
     return message.find(item) + len(item)
 
 
-def find_index(lst, item):
-    for i in range(lst.size()):
-        if lst.get(i) == item:
-            return i
-    else:
-        return -1
-
-
 def on_closing(tk_obj, messenger=None, event=None):
-    """This function is to be called when the window is closed."""
-    if last_item[0] != 0 and messenger and not typing_my_name[0]:
-        messenger.set("quit()")
-        send(messenger)
-    elif typing_my_name[0] and last_item[0] != 0:
-        select_server(tk_obj)
-    else:
+    """
+    :param tk_obj: TKobject to close
+    :param messenger: Entry object in chatter window
+    :param event: close event
+    This function is to be called when the window is closed.
+    This function throws you back to whatever previous window you were in
+    and closes the window entirely if the current window is mode select
+    """
+    global current_window, mode
+    # 0 = mode select
+    # 1 = Server List mode select
+    # 2 = CUSTOM mode select
+    # 3 = chatter window
+    if current_window == 0:
         tk_obj.destroy()
 
+    if current_window in [1, 2]:
+        mode_select(tk_obj)
 
-def handle_message(msg, tk_obj):
-    # Welcome message
-    """
-    :param msg: The message being handled
-    :param tk_obj: The tk form object.
-    Takes parameter msg. This function figures out what do to with said message.
-    It can either be a message from another user, or from the System. So first,
-    we figure out if it's a message from the system, requiring special care.
-    Examples are:
-        - Kicked
-        - Direct Message
-        - User left server
-    """
-    args = msg.split(" ")
-    if search(r"^{System}", msg):
-
-        msg = msg[len("{System} "):]
-        if msg.find("Kicked") != -1:
-            end = find_end(msg, ". ")  # Reason for kick was provided
-
-            if end == 1:
-                mb.showinfo("Instructions", "You've been kicked! Oh no!")
-                print("No reason")
+    if current_window == 3:
+        if typing_my_name[0]:
+            # Still writing name, so we can't send quit message.
+            if mode == "custom":
+                custom_server_select(tk_obj)
+                current_window = 2
             else:
-                mb.showinfo("Instructions", f'{encrypt_few_words(msg[end:], 1)}')
-            select_server(tk_obj)
-
-        elif msg.find("was kicked by") != -1:
-            x = msg.find("{System}")
-            x = len(msg) if x == -1 else x
-            msg = msg[:x]
-            if len(args) > 6:
-                msg = encrypt_few_words(msg, 6)  # name was kicked by name for (args[6] + )
-
-        elif search("Welcome", msg):
-            typing_my_name[0] = False  # Valid name
-
-        if search("Update user_num", msg):
-            online_member_number_but_its_an_int[0] = int(msg[msg.find(",")+1:msg.find("{System}")])
-            online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
-
-            msg = msg[find_end(msg, "{System} "):]
-
-            members = msg[14:].split("+")
-            names = tk_obj.winfo_children()[1].winfo_children()[1]
-
-            names.delete(0, tk.END)  # delete all users
-
-            for member in members:
-                # print("add", member)  # add them back with new user / nickname
-                names.insert(tk.END, member)
-            msg = "don't" if not search("changed to", msg) else msg
-            # if we need to update bc a nickname change, keep checking the message
-
-        elif search("Direct message to: ", msg):
-            msg = encrypt_few_words(msg, 5)
-
-        elif search("Message from ", msg):
-            msg_array = msg[find_end(msg, args[3]) + 1:].split(" ")
-            msg = f'{msg[:find_end(msg, args[3])]} {" ".join([encode(x, KEY) for x in msg_array])}'
-        elif search("Command List", msg):
-            msg = msg[len("Command List") + 1:]
-
-        # Nickname
-        if search("changed to", msg):
-            found_nicks = [x for x in list(search(r"^(.+) changed to (.+)", msg).groups())]
-            msg = "{System} " + f'{found_nicks[0]} renamed to: {found_nicks[1]}'
-
-        # Users Online
-        elif search(r"\d+ users online", msg):
-            before = msg[:msg.find("online") + len("online")] + " , "
-            after = " | ".join([x for x in msg[len(before) + 1:].split(" | ")])
-            msg = before + after
-
-        elif search(r"Not a valid command", msg):
-            msg = "Invalid Command."
-
-        # On user leave
-        elif search("left the chat", msg):
-            try:
-                user_name = search(r'^(.+) has left the chat.$', msg).groups()[0]
-                print(f'LEFT CHAT: {user_name}')
-                msg = "{System} " + f'{user_name} has left the chat.'
-            except AttributeError:
-                pass
+                server_list(tk_obj)
+                current_window = 1
         else:
-            msg = msg
-    else:
-        if msg.find("Kindly, leave") != -1:
-            select_server(tk_obj)
-    return msg
+            # Already wrote my name
+            messenger.set("quit()")
+            send(messenger, tk_obj)
 
 
 def encrypt_few_words(msg, start=0, end=-1):
+    """
+    :param msg: Message to handle
+    :param start: start index (in argument list)
+    :param end: end position (in argument list) + 1
+    :return: encrypted string
+    """
     global KEY
     args = msg.split(" ")
     end = end if end != -1 else len(args) - 1
@@ -186,55 +141,94 @@ def encrypt_few_words(msg, start=0, end=-1):
     return ' '.join(args)
 
 
-def command_handler(msg, args):
+def format_message(args):
+    """
+    :param args: message args (split(" "))
+    :return: formatted length, type, color, and message ready to send.
+    """
     global name
+    update_key()
     msg = ' '.join(list(filter(None, args)))  # remove extra spaces
     args = list(filter(None, args))  # remove extra spaces
-    if not msg == "quit()" and not msg[0] == command_prefix and not typing_my_name[0]:
-        '''
-        #   Normal Message
-        '''
-        msg = encode(msg, KEY)
 
-    elif msg[0] == command_prefix and not typing_my_name[0]:
-        '''
-        #   Commands
-        '''
-        args[0] = args[0][1:]
-        two_args_commands = ["w", "whisper", "kick"]
-        one_arg_commands = ["announce", "login", "block"]
+    color = "NOBGCL"
+    msg_type = "Normal"
+    if msg == f"{command_prefix}update_key":
+        update_key(True)
+        msg = ""
 
-        if args[0] in two_args_commands:
-            # commands that use 2 arguments
-            if len(args) < 3 and args[0] not in ["kick", "ban"]:
-                msg = f"{command_prefix}usage_{args[0]}"
+    if msg == "quit()":
+        return msg_len(msg.encode()), msg_type, color, msg
+
+    everyone_commands = ["kick", "color"]
+    you_commands = ["w", "whisper", "current", "online",
+                    "login", "logout", "block", "nick",
+                    "nickname", "help", "commands", "purge",
+                    "reminder", "time"]
+
+    command = args[0][len(command_prefix):]
+    if typing_my_name[0]:
+        msg = "_".join(args)
+        length = msg_len(msg)
+        color = "04CC04"
+        return length, msg_type, color, "_".join(args)
+    if command in everyone_commands:
+        msg_type = "EvrCmd"
+        color = "904010"
+
+        if command in ["nick", "nickname"]:
+            if len(args) < 3:
+                msg = f"usage_{command}"
             else:
+                name = '_'.join(args[1:])
+                msg = f'{args[0]} {name}'
+
+        if command == "color":
+            if len(args) < 3:
+                msg = f"usage_{command}"
+            else:
+                if search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', args[1]):
+                    color = args[1][1:]
+                    msg = encrypt_few_words(' '.join(args), 2)
+                else:
+                    msg = "usage_color"  # invalid, will not send
+
+        if command == "kick":
+            if len(args) < 2:
+                msg = f"usage_{command}"
+            else:
+                color = "AA0000"
                 msg = encrypt_few_words(msg, 2)
 
-        elif args[0] in one_arg_commands:
-            # commands that use one argument
+    elif command in you_commands:
+        msg_type = "SlfCmd"
+
+        if command in ["w", "whisper"]:
+
+            if len(args) < 3:
+                msg = f"usage_{command}"
+            else:
+                color = "ab9aa0"
+                msg = encrypt_few_words(msg, 2)
+
+        if command == "login":
             if len(args) < 2:
-                msg = f"{command_prefix}usage_{args[0]}"
+                msg = f"usage_{command}"
             else:
                 msg = encrypt_few_words(msg, 1)
-        else:
-            # nickname command
-            name = '_'.join(args[1:])
-            msg = f'{command_prefix}{args[0]} {name}' if f'{command_prefix}{args[0]}' in \
-                                                         [f"{command_prefix}nick", f"{command_prefix}nickname"] \
-                                                         else msg
-        msg = ' '.join(list(filter(None, msg.split(" "))))
-        # remove extra spaces again,
-        # in case it sucked the first time
     else:
-        name = "_".join(args)
+        # Normal message
+        msg = encrypt_few_words(msg)
 
-    return msg
+    length = msg_len(msg.encode())
+    return length, msg_type, color, msg
 
 
 def update_key(force=False):
     """
     :param force: Forces the key update.
+    This function retrieves the encryption key
+    from the API I am hosting in heroku.
     """
     # I made a heroku app, which updates the key every minute.
     global KEY, last_update
@@ -246,38 +240,202 @@ def update_key(force=False):
         print("Updated key to", KEY)
 
 
+def handle_incoming_command(data, tk_obj):
+    """
+    :param data: The command we're dealing with
+    :param tk_obj: Root window
+    :return: Handles, and returns the fitting data to display from a command.
+    """
+    global mode
+    if data[:7] == "[color]":
+        return encrypt_few_words(data[7:], 1)
+
+    elif data.find("Purge") != -1:
+        number = int(data.split(' ')[1])
+        msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
+        purge(number, msg_list)
+
+    elif data[:6] == "Kicked":
+        reason = find_end(data, ". ") != 1
+        if reason:
+            mb.showinfo("Info", f"You've been kicked.\n"
+                                f"Reason: {encrypt_few_words(data[find_end(data, 'Kicked. Reason: '):])}")
+        else:
+            mb.showinfo("Info", "Oh no! You've been kicked.")
+
+        if mode == "custom":
+            custom_server_select(tk_obj)
+        else:
+            server_list(tk_obj)
+        return
+
+    elif data.find("was kicked by") != -1:
+        # Name was kicked by Name for Reason
+        reason = find_end(data, "for") != -1
+        if reason:
+            return encrypt_few_words(data, 6)
+
+    elif data.find("Welcome") != -1:
+        typing_my_name[0] = False
+
+    elif data.find("Update user_num") != -1:
+        online_member_number_but_its_an_int[0] = int(data[data.find(",") + 1:])
+        online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
+
+    elif data.find("Update members") != -1:
+        members = data[14:].split("+")
+        names = tk_obj.winfo_children()[1].winfo_children()[1]
+        names.delete(0, tk.END)  # delete all users
+        for member in members:
+            # add them back with new user / nickname
+            names.insert(tk.END, member)
+
+    elif data.find("Message from") != -1 or data.find("Message to") != -1:
+        data = encrypt_few_words(data, 3)
+        print(f'Decrypting... ->  {data}')
+
+    # nickname change
+    # elif data.find("renamed to") != -1:
+    #     found_nicks = [x for x in list(search(r"^(.+) renamed to (.+)", data).groups())]
+    #     data = f'{found_nicks[0]} renamed to: {found_nicks[1]}'
+
+    # current users online
+    elif data.find("users online") != -1:
+        before = data[:find_end(data, "users online")] + ":\n"
+        after = " | ".join([x for x in data[len(before) - 1:].split(" | ")])
+        data = before + after
+
+    elif data[:find_end(data, "[color]")] == "[color]":
+        data = encrypt_few_words(data[7:], 1)
+
+    elif data == "Kindly, leave":
+        if mode == "custom":
+            custom_server_select(tk_obj)
+        else:
+            server_list(tk_obj)
+        return
+
+    return data
+
+
+def black_or_white(color):
+    """
+    :param color: Background colour.
+    :return: White or black foreground, depending on which is easier to see
+    Based on the formula
+    if red * 0.299 + green * 0.587 + blue * 0.114 > 186 black else white
+    """
+    color = "2c2f33" if color == "NOBGCL" else color
+    red = int(f"0x{color[:2]}", 16)
+    green = int(f"0x{color[2:4]}", 16)
+    blue = int(f"0x{color[4:6]}", 16)
+    return "#000000" if red * 0.299 + green * 0.587 + blue * 0.114 > 186 else "#ffffff"
+
+
+def purge(amount, listbox):
+    """
+    :param amount: Amount of messages to delete
+    :param listbox: messages listbox
+    Doesn't allow to delete first 3 messages.
+    """
+    start = listbox.size() - amount
+    if start < 3:
+        start = 3
+        listbox.delete(start, listbox.size() - 1)
+        listbox.insert(tk.END, "Can't delete first 3 messages")
+    else:
+        listbox.delete(start, listbox.size() - 1)
+
+
 def receive(tk_obj, client_sock):
+    """
+    :param tk_obj: TK_obj for scope purposes.
+    :param client_sock: Receives from the client sock
+    Friendly output, and handling of messages from the server.
+    """
     while True:
         update_key()
         try:
-            msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
+            msg_list = tk_obj.winfo_children()[0].winfo_children()[0]
             msg_list.see("end")
-            # accessing all the damn frames and that
-            msg = client_sock.recv(BUFFER_SIZE).decode("utf8")
-            # find length of username if there is one
-            n_len = msg.find(':')
-            if not n_len == -1 and not search(r"^{System}", msg):
-                update_key()
-                msg = msg[:n_len] + ": " + encode(msg[n_len + 2:], KEY)
-            else:
-                msg = handle_message(msg, tk_obj)
+            data = "NO DATA"
+            color = "#BBBBBB"
 
-            if msg != "Kindly, leave":
+            # accessing all the damn frames and that
+            # 6-Type 3-Length 6-Color 1-Display || Data
+            msg_type = client_sock.recv(6).decode()
+            print("New Message:")
+            print("Type: " + msg_type, end=" | Entire message: ")
+            print(client_sock.recv(1000, MSG_PEEK).decode())
+            if msg_type == "SysCmd":
+                next_command_size = client_socket.recv(3).decode()
+                print("Size: " + next_command_size, end=" | ")
+
+                color = client_sock.recv(6).decode()
+                color = "2c2f33" if color == "NOBGCL" else color
+                print("Color: " + color, end=" | ")
+                # Runs until it hits a command with length 0,
+                # Signaling the end of the communication.
+                print("Data:")
+                while next_command_size != "000":
+                    display = client_socket.recv(1).decode()
+                    data = client_socket.recv(int(next_command_size)).decode()
+                    print(data)
+                    # 1 display | 0 don't display
+                    if display == '1':
+                        msg = handle_incoming_command(data=data, tk_obj=tk_obj)
+                        if msg != "ignore":
+                            for line in msg.split("\n"):
+                                try:
+                                    msg_list.insert(tk.END, line)
+                                    last_item[0] += 1
+                                    msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
+                                except tk.TclError:  # server closed
+                                    pass
+                                if line.find(f'@{name}') != -1:
+                                    msg_list.itemconfig(last_item[0], bg='#C28241')
+
+                    else:
+                        _ = handle_incoming_command(data=data, tk_obj=tk_obj)
+
+                    next_command_size = client_socket.recv(3).decode()
+                    if next_command_size != "000":
+                        color = client_sock.recv(6).decode()
+                        print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Data: ")
+                # Example message:
+                # SysCmd018FFFFFF0Update user_num,01017FFFFFF0Update membersDan000
+                print('--------------------')
+            elif msg_type == "Normal":
+                size = client_socket.recv(3).decode()
+                color = client_socket.recv(6).decode()
+                msg = client_sock.recv(int(size)).decode()
+                current_user = msg[:msg.find(": ")]
+                msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ') + 2:])}"
                 for line in msg.split("\n"):
-                    if msg != "don't":
-                        try:
-                            msg_list.insert(tk.END, line)
-                            last_item[0] += 1
-                        except tk.TclError:  # server closed
-                            pass
+                    try:
+                        msg_list.insert(tk.END, line)
+                        last_item[0] += 1
+                        msg_list.itemconfig(last_item[0], bg=f'#{color}')
+                    except tk.TclError:  # server closed
+                        pass
                     if line.find(f'@{name}') != -1:
                         msg_list.itemconfig(last_item[0], bg='#C28241')
+            else:
+                test = msg_type + color + data + client_socket.recv(1024).decode()
+                if test:
+                    print("Error. Dumping data", test)
+
         except OSError:
             break  # Client has left the chat
         except IndexError:
             break  # Client has left the chat
         except RuntimeError:
             break  # Client has left the chat
+
+        except Exception as e:  # if we get any other error it's bc you messed up not me
+            print("You dun messed up.", e)
+            print("But don't worry, we handled it.")
+            break
 
 
 def listbox_copy(event):
@@ -291,6 +449,11 @@ def listbox_copy(event):
 
 
 def go_to_dm(event, entry_field):
+    """
+    :param event: double click
+    :param entry_field: Entry field of root menu (chatter menu)
+    Automatically places /whisper <name> in your message entry field.
+    """
     try:
         selection = event.widget.curselection()[0]
         if search(f"^{command_prefix}(whisper)|(w)", entry_field.get()):
@@ -300,52 +463,222 @@ def go_to_dm(event, entry_field):
         pass
 
 
-def send(input_msg, event=None):
+def send(input_msg, tk_obj, event=None):
+    """
+    :param input_msg: The entry field, from which we get the message
+    :param event: send event (enter, send button)
+    """
+    global current_window
     get = input_msg.get()
     if get == "":
         return
     update_key()
-    msg = command_handler(get, get.split(" "))
+    length, msg_type, color, data = format_message(get.split(" "))
+    msg = data
+    if not typing_my_name[0]:
+        msg = f"{length}{msg_type}{color}{data}"
+        print(F"\n\nSent:{msg}\n")
     input_msg.set("")
-    client_socket.send(bytes(msg, "utf8"))
+    if length != "000":
+        try:
+            client_socket.send(msg.encode())
+        except ConnectionResetError:
+            mb.showinfo("Info", "Server shut down. Returning to server select.")
+            if mode == "custom":
+                custom_server_select(tk_obj)
+                current_window = 2
+            else:
+                server_list(tk_obj)
+                current_window = 1
+
+
+def check_option(item, working_connections):
+    """
+    :param item: current server being checked
+    :param working_connections: list of working servers so far
+    """
+    check = socket(AF_INET, SOCK_STREAM)
+    ip = item[0]
+    port = int(item[1])
+    try:
+        check.connect((ip, port))
+        check.send("0".encode())
+    except:
+        print(f'Timeout: {ip}:{port} - Flagging as inactive.\n', end="")
+        req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
+    else:
+        print(f"Found working server. {item}")
+        working_connections.append([item[0], item[1]])
+    finally:
+        check.close()
+    return len(working_connections)
+
+
+def join_all(threads, timeout):
+    """
+    Args:
+        threads: a list of thread objects to join
+        timeout: the maximum time to wait for the threads to finish
+    Raises:
+        RuntimeError: is not all the threads have finished by the timeout
+    :return Amount of threads who were still active
+    """
+    start = cur_time = time.time()
+    while cur_time <= (start + timeout):
+        for thread in threads:
+            if thread.is_alive():
+                thread.join(timeout=0)
+        if all(not t.is_alive() for t in threads):
+            break
+        time.sleep(0.1)
+        cur_time = time.time()
+    else:
+        print(f"Force timeout after {timeout} seconds.", end="  ")
+        return len([t for t in threads if t.is_alive()])
 
 
 def resize_font(message_list, event=None):
+    """
+    :param message_list: message listbox
+    :param event: resize event
+    Makes the text resize dynamically to the width of the window.
+    """
     size = round(event.width / 100) + 4
     size = 5 if size < 6 else size
     try:
         message_list['font'] = ("Varela Round", size)
+        message_list.see("end")
     except tk.TclError:
         pass
 
 
+def confirm_config(tk_obj, ip, port):
+    """
+    :param tk_obj: window to remake
+    :param ip: ip to connect to
+    :param port: port to connect to
+    Remakes the window into the chatroom window if
+    we can connect, if not do nothing.
+    """
+    global client_socket
+    update_key()
+    if ip in ["Enter IP", ""]:
+        print("Must enter IP")
+        return
+    if port in ["Enter PORT", ""]:
+        print("Must enter PORT")
+        return
+    try:
+        port = int(port)
+    except ValueError:
+        print("Port must be int")
+        return
+    addr = ip, int(port)
+    print(f'Connecting to {addr}...')
+    client_socket = socket(AF_INET, SOCK_STREAM)
+    try:
+        client_socket.connect(addr)
+        client_socket.send("1".encode())
+        chat_room(tk_obj)
+        receive_thread = Thread(target=lambda: receive(tk_obj, client_socket))
+        receive_thread.start()
+    except Exception as e:
+        print(f'Try a different server.\n{e}')
+
+
+def verify_connections(server_list):
+    """
+    :param server_list: listbox
+    Loops over ip, port bundles from the heroku API and
+    tries connecting to each.
+    """
+    connections = req.get('https://get-api-key-2021.herokuapp.com').json()['connections']
+    working_connections = []
+    threads = []
+    for item in connections:
+        check_thread = Thread(target=lambda: check_option(item, working_connections))
+        threads.append(check_thread)
+        check_thread.start()
+    
+    # Don't print anything if we didn't timeout any threads
+    prt_str = f'On {join_all(threads, 3)} servers'
+    if prt_str != "On None servers":
+        print(f'On {join_all(threads, 3)} servers')
+
+    # Delete everything, then re-add valid ones
+    server_list.delete(0, tk.END)
+    if len(working_connections) == 0:
+        server_list.insert(tk.END, "No available servers.")
+        server_list.config(state=tk.DISABLED)
+    else:
+        server_list.config(state=tk.NORMAL)
+        server_list.delete(0, tk.END)
+
+    for address in working_connections:
+        ip = address[0]
+        port = address[1]
+        server_list.insert(tk.END, f"{ip}:{port}")
+
+
+def get_selection_confirm(tk_obj, list):
+    """
+    :param tk_obj: TKOBJ to remake
+    :param list: listbox to get selection from
+    Remakes the window into the chatroom window if
+    we can connect, if not, refresh the active
+    server list.
+    """
+    selection = list.curselection()
+    if selection:
+        index = selection[0]
+        text = list.get(index)
+        ip = text[:text.find(":")]
+        port = int(text[text.find(":") + 1:])
+
+        # noinspection PyTypeChecker
+        works = check_option([ip,port], []) == 1
+        if works:
+            confirm_config(tk_obj, ip, port)
+        else:
+            verify_connections(list)
+
+
 def chat_room(tk_obj):
-    global online_num
+    """
+    :param tk_obj: tkinter root
+    Destroys the tkinter object and remakes
+    it as a chatroom.
+    """
+    global online_num, current_window
+    current_window = 3
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.title("Chatter")
     tk_obj.resizable(width=True, height=True)
     tk_obj.minsize(700, 150)
     tk_obj.attributes("-topmost", True)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     my_msg = tk.StringVar()  # For the messages to be sent.
     my_msg.set("")
     messages_frame = tk.Frame(tk_obj)
     messages_frame.grid(row=0, column=1, columnspan=2, padx=5, pady=10, sticky="ewns")
-    scrollbar = tk.Scrollbar(messages_frame)  # To navigate through past messages.
-    scrollbar.grid(row=0, column=1, sticky="ewns")
 
-    msg_list = tk.Listbox(messages_frame, height=15, width=75, yscrollcommand=scrollbar.set, background="#2c2f33",
+    msg_list = tk.Listbox(messages_frame, height=15, width=75, background="#2c2f33",
                           foreground="white")
     msg_list.insert(tk.END, "Loading you in. This may take a bit.")
     msg_list.bind('<<ListboxSelect>>', lambda event: listbox_copy(event))
 
     # Following will contain the messages.
     entry_field = tk.Entry(messages_frame, textvariable=my_msg)
-    entry_field.bind("<Return>", lambda x: send(my_msg))
+    entry_field.bind("<Return>", lambda x: send(my_msg, tk_obj))
+    entry_field.bind('<Control-a>', lambda event: event.widget.select_range(0, 'end'))
+
     entry_field.grid(row=1, column=1, sticky="wnse")
     send_button = tk.Button(messages_frame, text="Send",
-                            command=lambda: send(my_msg), height=2, width=10)
+                            command=lambda: send(my_msg, tk_obj), height=2, width=10)
     send_button.grid(row=1, column=1, sticky="ens")
 
     messages_frame.rowconfigure(0, weight=1)
@@ -376,9 +709,68 @@ def chat_room(tk_obj):
     tk_obj.bind("<Configure>", lambda event: resize_font(msg_list, event))
 
 
-def select_server(tk_obj):
+def custom_server_select(tk_obj):
+    """
+    :param tk_obj: tkinter root
+    Destroys the tkinter object and remakes
+    it as the custom server entry window.
+    """
+    global current_window
+    current_window = 2
+
     typing_my_name[0] = True
     last_item[0] = 0
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    for child in tk_obj.winfo_children():
+        child.destroy()
+    tk_obj.iconbitmap('./images/list.ico')
+    tk_obj.title("Choose Server CUSTOM")
+    tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj))
+    # setting window size
+    width = 800
+    height = 450
+    screenwidth = tk_obj.winfo_screenwidth()
+    screenheight = tk_obj.winfo_screenheight()
+    alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
+    tk_obj.geometry(alignstr)
+    tk_obj.resizable(width=False, height=False)
+
+    image1 = Image.open("./images/bg_1.png")
+    x = image1.resize((800, 450), Image.ANTIALIAS)
+    test = ImageTk.PhotoImage(x)
+    background = tk.Label(tk_obj, image=test)
+    background.image = test
+    background["justify"] = "center"
+    background.place(x=0, y=0, width=800, height=450)
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    ip_field = EntryWithPlaceholder(tk_obj, "Enter IP")
+    ip_field.place(x=275, y=200, width=250, height=45)
+    ip_field["font"] = ("Helvetica", 24)
+
+    port_field = EntryWithPlaceholder(tk_obj, "Enter PORT")
+    port_field.place(x=275, y=275, width=250, height=45)
+    port_field["font"] = ("Helvetica", 24)
+    confirm = tk.Button(tk_obj, text="Confirm",
+                        command=lambda: confirm_config(tk_obj, ip_field.get(), port_field.get()),
+                        font="summer", bd=5)
+    confirm.place(x=275, y=345, width=250, height=45)
+
+
+def server_list(tk_obj):
+    """
+    :param tk_obj: tkinter root
+    Destroys the tkinter object and remakes
+    it as the server list window.
+    """
+    global current_window
+    current_window = 2
+
+    typing_my_name[0] = True
+    last_item[0] = 0
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.iconbitmap('./images/list.ico')
@@ -393,44 +785,81 @@ def select_server(tk_obj):
     tk_obj.geometry(alignstr)
     tk_obj.resizable(width=False, height=False)
 
-    image1 = Image.open("./images/bg.png")
+    image1 = Image.open('./images/server_select_bg.png')
     x = image1.resize((800, 450), Image.ANTIALIAS)
     test = ImageTk.PhotoImage(x)
     background = tk.Label(tk_obj, image=test)
     background.image = test
     background["justify"] = "center"
     background.place(x=0, y=0, width=800, height=450)
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    servers = tk.Listbox(tk_obj, height=15, width=75, background="#2c2f33",
+                         foreground="white")
+    servers['font'] = ("Varela Round", 24)
+    servers.place(x=180, y=115, width=440, height=210)
 
-    ip_field = EntryWithPlaceholder(tk_obj, "Enter IP")
-    ip_field.place(x=275, y=200, width=250, height=45)
-    ip_field["font"] = ("Helvetica", 24)
+    refresh = tk.Button(tk_obj, text="Confirm Selection",
+                        command=lambda: get_selection_confirm(tk_obj, servers), height=2, width=10)
+    refresh.place(x=425, y=350, width=325, height=80)
 
-    port_field = EntryWithPlaceholder(tk_obj, "Enter PORT")
-    port_field.place(x=275, y=275, width=250, height=45)
-    port_field["font"] = ("Helvetica", 24)
-    confirm = tk.Button(tk_obj, text="Confirm",
-                        command=lambda: confirm_config(tk_obj, ip_field.get(), port_field.get()),
-                        font="summer", bd=5)
-    confirm.place(x=275, y=345, width=250, height=45)
+    refresh = tk.Button(tk_obj, text="Refresh Servers",
+                        command=lambda: verify_connections(servers), height=2, width=10)
+    refresh.place(x=50, y=350, width=325, height=80)
+
+    load_servers = Thread(target=verify_connections(servers))
+    load_servers.start()
 
 
-def confirm_config(tk_obj, ip, port):
-    global client_socket
-    if ip == "" or "Enter IP":
-        ip = "79.177.33.79"
-        # ip = "10.0.0.12"
-    if port == "" or "Enter PORT":
-        port = 45000
-    addr = ip, port
-    print(f'Connecting to {addr}...')
-    client_socket = socket(AF_INET, SOCK_STREAM)
-    client_socket.connect(addr)
-    chat_room(tk_obj)
-    receive_thread = Thread(target=lambda: receive(tk_obj, client_socket))
-    receive_thread.start()
+def mode_select(tk_obj):
+    """
+    :param tk_obj: window to remake
+    Wanna enter a server on your own
+    or get a list of active servers?
+    """
+    global current_window
+    current_window = 0
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    typing_my_name[0] = True
+    last_item[0] = 0
+    for child in tk_obj.winfo_children():
+        child.destroy()
+    tk_obj.iconbitmap('./images/list.ico')
+    tk_obj.title("Choose Server LAN")
+    tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj))
+    # setting window size
+    width = 800
+    height = 450
+    screenwidth = tk_obj.winfo_screenwidth()
+    screenheight = tk_obj.winfo_screenheight()
+    alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
+    tk_obj.geometry(alignstr)
+    tk_obj.resizable(width=False, height=False)
+
+    image1 = Image.open("./images/bg_1.png")
+    x = image1.resize((800, 450), Image.ANTIALIAS)
+    test = ImageTk.PhotoImage(x)
+    background = tk.Label(tk_obj, image=test)
+    background.image = test
+    background["justify"] = "center"
+    background.place(x=0, y=0, width=800, height=450)
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    wan_button = tk.Button(tk_obj, text="Custom Entry",
+                           command=lambda: custom_server_select(tk_obj), height=2, width=10)
+
+    wan_button['font'] = ("Varela Round", 30)
+
+    wan_button.place(x=80, y=170, width=290, height=150)
+
+    lan_button = tk.Button(tk_obj, text="Server List",
+                           command=lambda: server_list(tk_obj), height=2, width=10)
+    lan_button['font'] = ("Varela Round", 30)
+    lan_button.place(x=410, y=170, width=290, height=150)
 
 
 if __name__ == "__main__":
     app = tk.Tk()
-    select_server(app)
+    mode_select(app)
     app.mainloop()
