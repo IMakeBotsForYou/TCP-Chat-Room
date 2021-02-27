@@ -1,4 +1,4 @@
-[Proper HTML in documentation folder](/documentation/Usage.html)
+[Download proper explanation with HTML in documentation folder](/documentation)
 <!DOCTYPE html>
 <html style="font-size: 16px;">
   <head>
