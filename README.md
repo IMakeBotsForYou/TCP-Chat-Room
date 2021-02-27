@@ -1,5 +1,4 @@
-[Proper HTML in documentation folder](/documentation/usage.html)
-
+[Proper HTML in documentation folder](/documentation/Usage.html)
 <!DOCTYPE html>
 <html style="font-size: 16px;">
   <head>
