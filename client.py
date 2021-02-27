@@ -216,6 +216,8 @@ def format_message(args):
                 msg = f"usage_{command}"
             else:
                 msg = encrypt_few_words(msg, 1)
+        if command == "purge" and len(args) < 2:
+            msg = "usage_purge"
     else:
         # Normal message
         msg = encrypt_few_words(msg)
@@ -339,10 +341,10 @@ def purge(amount, listbox):
     Doesn't allow to delete first 3 messages.
     """
     start = listbox.size() - amount
-    if start < 3:
-        start = 3
+    if start < 4:
+        start = 4
         listbox.delete(start, listbox.size() - 1)
-        listbox.insert(tk.END, "Can't delete first 3 messages")
+        listbox.insert(tk.END, "Can't delete first 4 messages")
     else:
         listbox.delete(start, listbox.size() - 1)
 
@@ -356,7 +358,7 @@ def receive(tk_obj, client_sock):
     while True:
         update_key()
         try:
-            msg_list = tk_obj.winfo_children()[0].winfo_children()[0]
+            msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
             msg_list.see("end")
             data = "NO DATA"
             color = "#BBBBBB"
@@ -434,7 +436,10 @@ def receive(tk_obj, client_sock):
 
         except Exception as e:  # if we get any other error it's bc you messed up not me
             print("You dun messed up.", e)
-            print("But don't worry, we handled it.")
+            print("\nBut don't worry, we handled it.")
+            test = client_socket.recv(1024).decode()
+            if test:
+                print("Dumping data", test)
             break
 
 
@@ -504,10 +509,10 @@ def check_option(item, working_connections):
         check.connect((ip, port))
         check.send("0".encode())
     except:
-        print(f'Timeout: {ip}:{port} - Flagging as inactive.\n', end="")
+        print(f'{ip}:{port} Timed out - Flagging as inactive.')
         req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
     else:
-        print(f"Found working server. {item}")
+        print(f"Found working server. {item}\n")
         working_connections.append([item[0], item[1]])
     finally:
         check.close()
@@ -533,7 +538,7 @@ def join_all(threads, timeout):
         time.sleep(0.1)
         cur_time = time.time()
     else:
-        print(f"Force timeout after {timeout} seconds.", end="  ")
+        print(f"Force timeout after {timeout} seconds | ", end="  ")
         return len([t for t in threads if t.is_alive()])
 
 
@@ -543,8 +548,10 @@ def resize_font(message_list, event=None):
     :param event: resize event
     Makes the text resize dynamically to the width of the window.
     """
+    if event.width < 750:
+        return
     size = round(event.width / 100) + 4
-    size = 5 if size < 6 else size
+    size = 11 if size < 11 else size
     try:
         message_list['font'] = ("Varela Round", size)
         message_list.see("end")
@@ -582,6 +589,7 @@ def confirm_config(tk_obj, ip, port):
         chat_room(tk_obj)
         receive_thread = Thread(target=lambda: receive(tk_obj, client_socket))
         receive_thread.start()
+
     except Exception as e:
         print(f'Try a different server.\n{e}')
 
@@ -601,7 +609,7 @@ def verify_connections(server_list):
         check_thread.start()
     
     # Don't print anything if we didn't timeout any threads
-    prt_str = f'On {join_all(threads, 3)} servers'
+    prt_str = f'On {join_all(threads, 1)} servers'
     if prt_str != "On None servers":
         print(prt_str)
 
@@ -665,30 +673,40 @@ def chat_room(tk_obj):
     my_msg.set("")
     messages_frame = tk.Frame(tk_obj)
     messages_frame.grid(row=0, column=1, columnspan=2, padx=5, pady=10, sticky="ewns")
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
+    scrollbar = tk.Scrollbar(messages_frame)
+    scrollbar.grid(row=0,column=2, sticky="wens")
     msg_list = tk.Listbox(messages_frame, height=15, width=75, background="#2c2f33",
-                          foreground="white")
+                          foreground="white", yscrollcommand=scrollbar.set)
     msg_list.insert(tk.END, "Loading you in. This may take a bit.")
     msg_list.bind('<<ListboxSelect>>', lambda event: listbox_copy(event))
-
+    scrollbar.config(command=msg_list.yview)
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     # Following will contain the messages.
     entry_field = tk.Entry(messages_frame, textvariable=my_msg)
     entry_field.bind("<Return>", lambda x: send(my_msg, tk_obj))
     entry_field.bind('<Control-a>', lambda event: event.widget.select_range(0, 'end'))
 
     entry_field.grid(row=1, column=1, sticky="wnse")
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     send_button = tk.Button(messages_frame, text="Send",
                             command=lambda: send(my_msg, tk_obj), height=2, width=10)
     send_button.grid(row=1, column=1, sticky="ens")
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     messages_frame.rowconfigure(0, weight=1)
     messages_frame.columnconfigure(1, weight=1)
     msg_list.grid(row=0, column=1, sticky="ewns")
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     # noinspection PyTypeChecker
     online_num[0] = tk.StringVar()
     online_num[0].set("Users online: [Loading...]")
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     online_users = tk.Frame(tk_obj)
     online_users.grid(row=0, column=0, padx=5, pady=10, sticky="ewns")
     scrollbar1 = tk.Scrollbar(online_users)  # To navigate through past messages.
@@ -701,12 +719,15 @@ def chat_room(tk_obj):
     users_list.grid(row=1, column=0, sticky="ewns")
     users_list.bind('<<ListboxSelect>>', lambda event: go_to_dm(event, entry_field))
     online_text.grid(row=0, column=0, sticky="nwse")
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     tk_obj.columnconfigure(1, weight=1)
     tk_obj.rowconfigure(0, weight=1)
 
     tk_obj.protocol("WM_DELETE_WINDOW", lambda: on_closing(tk_obj, my_msg))
     tk_obj.bind("<Configure>", lambda event: resize_font(msg_list, event))
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
 
 
 def custom_server_select(tk_obj):
@@ -735,7 +756,8 @@ def custom_server_select(tk_obj):
     alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
     tk_obj.geometry(alignstr)
     tk_obj.resizable(width=False, height=False)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     image1 = Image.open("./images/bg_1.png")
     x = image1.resize((800, 450), Image.ANTIALIAS)
     test = ImageTk.PhotoImage(x)
@@ -748,7 +770,8 @@ def custom_server_select(tk_obj):
     ip_field = EntryWithPlaceholder(tk_obj, "Enter IP")
     ip_field.place(x=275, y=200, width=250, height=45)
     ip_field["font"] = ("Helvetica", 24)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     port_field = EntryWithPlaceholder(tk_obj, "Enter PORT")
     port_field.place(x=275, y=275, width=250, height=45)
     port_field["font"] = ("Helvetica", 24)
@@ -756,7 +779,8 @@ def custom_server_select(tk_obj):
                         command=lambda: confirm_config(tk_obj, ip_field.get(), port_field.get()),
                         font="summer", bd=5)
     confirm.place(x=275, y=345, width=250, height=45)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
 
 def server_list(tk_obj):
     """
@@ -784,7 +808,8 @@ def server_list(tk_obj):
     alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
     tk_obj.geometry(alignstr)
     tk_obj.resizable(width=False, height=False)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     image1 = Image.open('./images/server_select_bg.png')
     x = image1.resize((800, 450), Image.ANTIALIAS)
     test = ImageTk.PhotoImage(x)
@@ -798,17 +823,22 @@ def server_list(tk_obj):
                          foreground="white")
     servers['font'] = ("Varela Round", 24)
     servers.place(x=180, y=115, width=440, height=210)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     refresh = tk.Button(tk_obj, text="Confirm Selection",
                         command=lambda: get_selection_confirm(tk_obj, servers), height=2, width=10)
     refresh.place(x=425, y=350, width=325, height=80)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     refresh = tk.Button(tk_obj, text="Refresh Servers",
                         command=lambda: verify_connections(servers), height=2, width=10)
     refresh.place(x=50, y=350, width=325, height=80)
-
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
     load_servers = Thread(target=verify_connections(servers))
     load_servers.start()
+    # ---------------------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------------------
 
 
 def mode_select(tk_obj):
