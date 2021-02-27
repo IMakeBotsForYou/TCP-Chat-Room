@@ -1,3 +1,5 @@
+[Proper HTML in documentation folder](/documentation/usage.html)
+
 <!DOCTYPE html>
 <html style="font-size: 16px;">
   <head>
