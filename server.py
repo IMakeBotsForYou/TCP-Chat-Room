@@ -27,20 +27,20 @@ colours = {
 
 # All command usages
 usage = {
-    "nick": "/nick <new name>: Rename Yourself!",
-    "nickname": "/nickname <new name>: Rename Yourself!",
-    "w": "/w <name>: whisper to someone",
-    "whisper": "/whisper <name>: whisper to someone",
+    "nick": "/nick new name: Rename Yourself!",
+    "nickname": "/nickname new_name: Rename Yourself!",
+    "w": "/w name: whisper to someone",
+    "whisper": "/whisper name: whisper to someone",
     # "online": "/online: show who's online!",   # One parameter commands never get usage'd
     # "current": "/current: show who's online!", # One parameter commands never get usage'd
     # "time": "/time: shows the server time",    # One parameter commands never get usage'd
-    "login": "/login <password> Try logging in as admin!",
-    "block": "/block <username> You can't see a users messages anymore.\nTo revert, do /unblock <username>",
-    "purge": "/purge <number>: delete (positive) X amount of messages",
-    "color": "admin_/color <#color>: send a message with a special bg",
-    "kick": "admin_/kick <username>: kicks a user",
-    "reminder": "/reminder <seconds>: Remind you to talk after x seconds. (min 5)",
-    "boot": "admin_/boot <username>: kicks a user",
+    "login": "/login password Try logging in as admin!",
+    "block": "/block username You can't see a users messages anymore.\nTo revert, do /unblock <username>",
+    "purge": "/purge number: delete (positive) X amount of messages",
+    "color": "admin_/color #color message: send a message with a special bg",
+    "kick": "admin_/kick username: kicks a user",
+    "reminder": "/reminder seconds: Remind you to talk after x seconds. (min 5)",
+    "boot": "admin_/boot username: kicks a user",
     # "logout": "admin_/logout: logs out of admin mode",  # One parameter commands never get usage'd
     # "end": "admin_/end: Ends server lol",               # One parameter commands never get usage'd
     # "close": "admin_/end: Ends server lol"              # One parameter commands never get usage'd
@@ -51,7 +51,7 @@ command_list = ["Command List:",
                 "/w or /whisper <name>: whisper to someone",
                 "/online or /current: show who's online",
                 "/purge <number>: delete the last X lines",
-                "/time: show the server's time"
+                "/time: show the server's time",
                 "/update_key: Force update your key",
                 "/reminder <seconds>: Remind you to talk after x seconds",
                 "/login <password>: Try logging in as admin."]  # I do this so you can minimize the list
@@ -220,6 +220,7 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
         client.send(("SysCmd" + "013" + colours['white'] + "0" + "Kindly, leave" + "000").encode())
     except ConnectionResetError:
         pass
+    send_update(start_chain=True, end_chain=True)
 
 
 def close_server():
@@ -295,6 +296,8 @@ def handle_command(data, client):
             data = "Purged " + str(number) + " messages."
             return data, "NOBGCL"
         except ValueError:
+            data = "usage_purge"
+        except IndexError:
             data = "usage_purge"
 
     if command == "reminder":
@@ -383,6 +386,7 @@ def handle_command(data, client):
 
             retrieve_key()
             passw = encode(''.join(args[1:]), KEY[0])
+            admin_password = req.get("https://get-api-key-2021.herokuapp.com/").json()['pass']
             clients[client][1] = passw == admin_password
             success = passw == admin_password
             # Decode what the user has sent.
@@ -451,15 +455,14 @@ def handle_command(data, client):
 
     if data.find("usage_") != -1:
         command = args[0][len("usage_"):]
-        if not clients[client][1]:  # if not admin, send only valid commands
-            if usage[command][:6] == "admin_" or command not in usage:
-                return "Usage: Not a valid command", "AA0404"
+        admin_command = usage[command][:6] == "admin_"
+        if (not is_admin and admin_command) or (command not in usage):
+            return "Usage: Not a valid command", "AA0404"
+
+        if admin_command:
             return f"Usage: {usage[command][6:]}", "NOBGCL"
 
-        if usage[command][:6] == "admin_":
-            return f"Usage: {usage[command][6:]}", "NOBGCL"
-        else:
-            return f"Usage: {usage[command]}", "NOBGCL"
+        return f"Usage: {usage[command]}", "NOBGCL"
 
     return "No Command Activated", "NOBGCL"
 
@@ -602,7 +605,7 @@ if mode == "lan":
     c_ip = gethostbyname(gethostname())
     c_port = SERVER.getsockname()[1]
     # Add the server to active connections
-    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{c_port}')
+    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{c_port}/local')
 
 else:
     SERVER = socket(AF_INET, SOCK_STREAM)
@@ -614,7 +617,7 @@ else:
     c_ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
     # Add the server to active connections
-    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{ADDR[1]}')
+    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{ADDR[1]}/wan')
 
 clients = {}
 addresses = {}

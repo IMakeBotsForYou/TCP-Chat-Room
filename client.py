@@ -1,5 +1,5 @@
 """Script for Tkinter GUI chat client."""
-from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK
+from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK, gethostname, gethostbyname
 from threading import Thread
 from re import search
 import tkinter as tk
@@ -600,14 +600,15 @@ def verify_connections(server_list):
     Loops over ip, port bundles from the heroku API and
     tries connecting to each.
     """
-    connections = req.get('https://get-api-key-2021.herokuapp.com').json()['connections']
+    ip = gethostbyname(gethostname())
+    connections = req.get(f'https://get-api-key-2021.herokuapp.com/forme/{ip}').json()['connections_for_me']
     working_connections = []
     threads = []
     for item in connections:
         check_thread = Thread(target=lambda: check_option(item, working_connections))
         threads.append(check_thread)
         check_thread.start()
-    
+
     # Don't print anything if we didn't timeout any threads
     prt_str = f'On {join_all(threads, 1)} servers'
     if prt_str != "On None servers":
@@ -781,6 +782,7 @@ def custom_server_select(tk_obj):
     confirm.place(x=275, y=345, width=250, height=45)
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
+
 
 def server_list(tk_obj):
     """
