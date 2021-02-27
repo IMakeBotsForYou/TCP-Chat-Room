@@ -1,7 +1,8 @@
 Requirements:
 	-An internet connection
 
+Docs - https://chat-room-docs-app.herokuapp.com/
 
-Go to the documentation folder, and click on Home-Page.html.
+This version does not include the server file, since it's the client version.
 
-You will see the rest there :)
+For full version go to https://github.com/IMakeBotsForYou/TCP-Chat-Room/archive/main.zip
