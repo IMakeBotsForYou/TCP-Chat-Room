@@ -1,10 +1,8 @@
 """Server for multi-threaded (asynchronous) chat application."""
 from re import search
 from socket import AF_INET, socket, SOCK_STREAM, gethostbyname, gethostname  # , MSG_PEEK
-from threading import Thread, Event
-import requests as req
 import time
-
+from helper_functions import *
 # Encryption key
 KEY = [0]
 # Last time the key was updated
@@ -69,12 +67,8 @@ admin_password = "danIsTheKing"
 COMMAND_PREFIX = "/"
 
 
-def msg_len(data):
-    """
-    :param data: The data we're getting the length of
-    :return: Length of the encoded data, left-padded to be 3 digits long.
-    """
-    return str(len(data.encode())).zfill(3)
+def format_message(type, color, display, data):
+    return type+msg_len(data)+color+display+data
 
 
 def accept_incoming_connections():
@@ -109,26 +103,6 @@ def accept_incoming_connections():
         except OSError:
             close_server()
             break
-
-
-def call_repeatedly(interval, func, *args):
-    """
-    Used to check if the user hasn't talked for X seconds.
-
-    :param interval: The interval between the checks
-    :param func: Function to run at said interval
-    :param args: Arguments for command
-    :return: When called, stops the looping.
-    """
-    stopped = Event()
-
-    def loop():
-        x = "continue"
-        while not stopped.wait(interval) or x == "stop":  # the first call is in `interval` secs
-            x = func(*args)  # if loop asks to stop, stop it
-
-    Thread(target=loop).start()
-    return stopped.set
 
 
 def why_arent_you_talking(client):
@@ -171,20 +145,6 @@ def get_client(val, ip=False):
             if val == value[0]:
                 return key, clients[key]
     return "invalid", "invalid"
-
-
-def retrieve_key(force=False):
-    """
-    :param force: Forces the key update.
-    This retrieves key from the heroku key api.
-    """
-    # I made a heroku app, which updates the key every minute.
-    global last_update
-    current_time = int(time.time()) * 1000
-    if current_time - last_update > 60_000 or force:  # Update time for key
-        data = req.get('https://get-api-key-2021.herokuapp.com/').json()
-        KEY[0] = data['code']
-        last_update = data['last_time']
 
 
 def kick(client, delete=True, cl=False, message=True, custom=""):
@@ -230,7 +190,7 @@ def close_server():
     """
     for x in clients:
         try:
-            kick(x, False, True)
+            kick(x, delete=False, cl=True)
         except OSError:
             pass
     lst = list(clients.keys()).copy()
@@ -284,6 +244,7 @@ def handle_command(data, client):
     args = list(filter(None, args))
     # first arg is the command name, after the '/'
     command = args[0][len(COMMAND_PREFIX):]
+    ignore = "ignore", "NOBGCL"
     if command == "time":
         return f"Current server time: |{time.ctime(time.time())}|", "NOBGCL"
 
@@ -405,7 +366,7 @@ def handle_command(data, client):
         data = "You don't have access to this command."
         color = colours['red']
         client.send(f"SysCmd{msg_len(data)}{color}1{data}000".encode())
-        return "ignore", "NOBGCL"
+        return ignore
     if is_admin:
         if command in ["end", "close"]:
             try:
@@ -446,23 +407,31 @@ def handle_command(data, client):
                 data_1 = "User isn't connected"
                 length = msg_len(data_1)
                 client.send(("SysCmd" + length + "NOBGCL" + "1" + data_1 + "000").encode())
-                return "ignore", "NOBGCL"
+                return ignore
 
     # In case something is invalid, we put this at the end.
     # split command into args
     args = data.strip().split(" ")
     args = list(filter(None, args))
-
     if data.find("usage_") != -1:
+        msg_type = "SysCmd"
         command = args[0][len("usage_"):]
         admin_command = usage[command][:6] == "admin_"
         if (not is_admin and admin_command) or (command not in usage):
-            return "Usage: Not a valid command", "AA0404"
+            message = format_message(msg_type, colours['red'], "1", "Usage: Not a valid command")
+            client.send((message+"000").encode())
+            return ignore
 
         if admin_command:
-            return f"Usage: {usage[command][6:]}", "NOBGCL"
+            data = f"Usage: {usage[command][6:]}"
+            message = format_message(msg_type, colours['red'], "1", data)
+            client.send((message + "000").encode())
+            return ignore
 
-        return f"Usage: {usage[command]}", "NOBGCL"
+        data = f"Usage: {usage[command]}"
+        message = format_message(msg_type, colours['red'], "1", data)
+        client.send((message+"000").encode())
+        return ignore
 
     return "No Command Activated", "NOBGCL"
 
@@ -596,6 +565,14 @@ If mode is lan, then choose a random port and host on NAT
 If mode is wan, assume user has set up port forwarding, 
 and request a port to host the server on.
 """
+
+
+def post_to_api(ip, port, mode):
+    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{ip}/{port}/{mode}')
+
+
+stop_calling = None
+
 if mode == "lan":
     # LAN server, pick a random port.
     PORT = 0
@@ -605,10 +582,13 @@ if mode == "lan":
     c_ip = gethostbyname(gethostname())
     c_port = SERVER.getsockname()[1]
     # Add the server to active connections
-    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{c_port}/local')
+    post_to_api(c_ip, c_port, "local")
+    # calls after 10 second delay, then every 10 seconds
+    stop_calling = call_repeatedly(10, post_to_api, c_ip, c_port, "local")
 
 else:
     SERVER = socket(AF_INET, SOCK_STREAM)
+
     port = input("Enter PortForwarding PORT > ")
     while not port.isnumeric():
         port = input("Enter PortForwarding PORT > ")
@@ -616,8 +596,10 @@ else:
     ADDR = (HOST, port)
     c_ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
+    post_to_api(c_ip, port, "local")
     # Add the server to active connections
-    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{c_ip}/{ADDR[1]}/wan')
+    # calls after 10 second delay, then every 10 seconds
+    stop_calling = call_repeatedly(10, post_to_api, c_ip, port, "wan")
 
 clients = {}
 addresses = {}
@@ -631,3 +613,4 @@ print("Waiting for connection...")
 
 accept_incoming_connections()
 SERVER.close()
+stop_calling()
