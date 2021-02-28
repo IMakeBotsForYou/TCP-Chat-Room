@@ -1,10 +1,9 @@
 """Server for multi-threaded (asynchronous) chat application."""
 from re import search
 from socket import AF_INET, socket, SOCK_STREAM, gethostbyname, gethostname  # , MSG_PEEK
-import time
 from helper_functions import *
 # Encryption key
-KEY = [0]
+KEY = 0
 # Last time the key was updated
 last_update = 0
 # Is the server still running? (For shutdown command)
@@ -67,8 +66,8 @@ admin_password = "danIsTheKing"
 COMMAND_PREFIX = "/"
 
 
-def format_message(type, color, display, data):
-    return type+msg_len(data)+color+display+data
+def format_message(msg_type, color, display, data):
+    return msg_type+msg_len(data)+color+display+data
 
 
 def accept_incoming_connections():
@@ -86,7 +85,7 @@ def accept_incoming_connections():
             # 0 -> checker
             # 1 -> user
             if user_mode == "0":
-                print(f"We've been scanned by {client_address}")
+                print(f"We've been scanned by {client_address[0]}")
                 continue
 
             print(f"{client_address} has connected.")
@@ -200,10 +199,6 @@ def close_server():
     SERVER.close()
 
 
-def encode(txt, key):
-    return ''.join([chr(ord(a) ^ key) for a in txt])
-
-
 def send_update(start_chain, end_chain):
     """
     :param start_chain: Start a command chain (SysCmd)
@@ -238,7 +233,7 @@ def handle_command(data, client):
     If the user has sent a command, instead of a normal message -
     we need to handle it properly.
     """
-
+    global last_update, KEY
     # split command into args
     args = data.strip().split(" ")
     args = list(filter(None, args))
@@ -345,11 +340,11 @@ def handle_command(data, client):
         else:
             print(f"Logging {clients[client][0]} in")
 
-            retrieve_key()
-            passw = encode(''.join(args[1:]), KEY[0])
-            admin_password = req.get("https://get-api-key-2021.herokuapp.com/").json()['pass']
-            clients[client][1] = passw == admin_password
-            success = passw == admin_password
+            last_update, KEY = retrieve_key(last_update, KEY)
+            passw = encode(''.join(args[1:]), KEY)
+            admin_pass = req.get("https://get-api-key-2021.herokuapp.com/").json()['pass']
+            clients[client][1] = passw == admin_pass
+            success = passw == admin_pass
             # Decode what the user has sent.
             print('Logged in!' if success else "Login failed.")
 
@@ -566,13 +561,7 @@ If mode is wan, assume user has set up port forwarding,
 and request a port to host the server on.
 """
 
-
-def post_to_api(ip, port, mode):
-    req.get(f'https://get-api-key-2021.herokuapp.com/servers/add/{ip}/{port}/{mode}')
-
-
 stop_calling = None
-
 if mode == "lan":
     # LAN server, pick a random port.
     PORT = 0
@@ -582,9 +571,9 @@ if mode == "lan":
     c_ip = gethostbyname(gethostname())
     c_port = SERVER.getsockname()[1]
     # Add the server to active connections
-    post_to_api(c_ip, c_port, "local")
+    post_request(f"/servers/add/{c_ip}/{c_port}/local")
     # calls after 10 second delay, then every 10 seconds
-    stop_calling = call_repeatedly(10, post_to_api, c_ip, c_port, "local")
+    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{c_ip}/{c_port}/local")
 
 else:
     SERVER = socket(AF_INET, SOCK_STREAM)
@@ -596,10 +585,10 @@ else:
     ADDR = (HOST, port)
     c_ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
-    post_to_api(c_ip, port, "local")
+    post_request(f"/servers/add/{c_ip}/{port}/wan")
     # Add the server to active connections
     # calls after 10 second delay, then every 10 seconds
-    stop_calling = call_repeatedly(10, post_to_api, c_ip, port, "wan")
+    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{c_ip}/{port}/wan")
 
 clients = {}
 addresses = {}
