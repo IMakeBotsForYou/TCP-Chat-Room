@@ -1,13 +1,11 @@
 """Script for Tkinter GUI chat client."""
 from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK, gethostname, gethostbyname
-from threading import Thread
 from re import search
 import tkinter as tk
 from tkinter import messagebox as mb
 from PIL import ImageTk, Image
-import requests as req
-import time
 from pyperclip import copy
+from helper_functions import *
 
 # ----Functionality---- #
 current_window = 0
@@ -22,10 +20,14 @@ online_num = [0]  # For the messages to be sent.
 online_member_number_but_its_an_int = [1]
 
 # ---- encryption ---- #
-KEY = 0
-last_update = 0  # last key update
+
+enc_vars = {
+    "key": 0,
+    "last_update": 0
+}
 
 # ----sockets part---- #
+load_servers = None
 HOST = "0"
 PORT = 0
 BUFFER_SIZE = 1024
@@ -63,23 +65,6 @@ class EntryWithPlaceholder(tk.Entry):
     def foc_out(self, *args):
         if not self.get():
             self.put_placeholder()
-
-
-def msg_len(data):
-    """
-    :param data: The data we're getting the length of
-    :return: Length of the encoded data, left-padded to be 3 digits long.
-    """
-    return str(len(data)).zfill(3)
-
-
-def encode(txt, key):
-    """
-    :param txt: text to encrypt
-    :param key: XOR key
-    :return: Encrypted text
-    """
-    return ''.join([chr(ord(a) ^ key) for a in txt])
 
 
 def find_end(message, item):
@@ -133,11 +118,10 @@ def encrypt_few_words(msg, start=0, end=-1):
     :param end: end position (in argument list) + 1
     :return: encrypted string
     """
-    global KEY
     args = msg.split(" ")
     end = end if end != -1 else len(args) - 1
     for i in range(start, end + 1):
-        args[i] = encode(args[i], KEY)
+        args[i] = encode(args[i], enc_vars['key'])
     return ' '.join(args)
 
 
@@ -147,14 +131,14 @@ def format_message(args):
     :return: formatted length, type, color, and message ready to send.
     """
     global name
-    update_key()
+    enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
     msg = ' '.join(list(filter(None, args)))  # remove extra spaces
     args = list(filter(None, args))  # remove extra spaces
 
     color = "NOBGCL"
     msg_type = "Normal"
     if msg == f"{command_prefix}update_key":
-        update_key(True)
+        enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'], force=True)
         msg = ""
 
     if msg == "quit()":
@@ -226,22 +210,6 @@ def format_message(args):
     return length, msg_type, color, msg
 
 
-def update_key(force=False):
-    """
-    :param force: Forces the key update.
-    This function retrieves the encryption key
-    from the API I am hosting in heroku.
-    """
-    # I made a heroku app, which updates the key every minute.
-    global KEY, last_update
-    current_time = int(time.time()) * 1000
-    if current_time - last_update > 60_000 or force:  # Update time for key
-        data = req.get('https://get-api-key-2021.herokuapp.com/').json()
-        KEY = data['code']
-        last_update = data['last_time']
-        print("Updated key to", KEY)
-
-
 def handle_incoming_command(data, tk_obj):
     """
     :param data: The command we're dealing with
@@ -296,11 +264,6 @@ def handle_incoming_command(data, tk_obj):
         data = encrypt_few_words(data, 3)
         print(f'Decrypting... ->  {data}')
 
-    # nickname change
-    # elif data.find("renamed to") != -1:
-    #     found_nicks = [x for x in list(search(r"^(.+) renamed to (.+)", data).groups())]
-    #     data = f'{found_nicks[0]} renamed to: {found_nicks[1]}'
-
     # current users online
     elif data.find("users online") != -1:
         before = data[:find_end(data, "users online")] + ":\n"
@@ -345,8 +308,10 @@ def purge(amount, listbox):
         start = 4
         listbox.delete(start, listbox.size() - 1)
         listbox.insert(tk.END, "Can't delete first 4 messages")
+        last_item[0] = listbox.size()-1
     else:
         listbox.delete(start, listbox.size() - 1)
+        last_item[0] = last_item[0] - amount
 
 
 def receive(tk_obj, client_sock):
@@ -356,7 +321,7 @@ def receive(tk_obj, client_sock):
     Friendly output, and handling of messages from the server.
     """
     while True:
-        update_key()
+        enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
         try:
             msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
             msg_list.see("end")
@@ -391,6 +356,8 @@ def receive(tk_obj, client_sock):
                                 try:
                                     msg_list.insert(tk.END, line)
                                     last_item[0] += 1
+                                    print(msg_list.get(last_item[0]))
+                                    print(last_item[0])
                                     msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
                                 except tk.TclError:  # server closed
                                     pass
@@ -477,7 +444,7 @@ def send(input_msg, tk_obj, event=None):
     get = input_msg.get()
     if get == "":
         return
-    update_key()
+    enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
     length, msg_type, color, data = format_message(get.split(" "))
     msg = data
     if not typing_my_name[0]:
@@ -509,37 +476,13 @@ def check_option(item, working_connections):
         check.connect((ip, port))
         check.send("0".encode())
     except:
-        print(f'{ip}:{port} Timed out - Flagging as inactive.')
-        req.get(f'https://get-api-key-2021.herokuapp.com/servers/remove/{item[0]}/{item[1]}')
+        print(f'{ip}:{port} Timed out - Flagging as inactive.\n')
+        post_request(f'/servers/remove/{item[0]}/{item[1]}/NONE')
     else:
-        print(f"Found working server. {item}\n")
-        working_connections.append([item[0], item[1]])
+        working_connections.append(f"{item[0]}:{item[1]}")
     finally:
         check.close()
     return len(working_connections)
-
-
-def join_all(threads, timeout):
-    """
-    Args:
-        threads: a list of thread objects to join
-        timeout: the maximum time to wait for the threads to finish
-    Raises:
-        RuntimeError: is not all the threads have finished by the timeout
-    :return Amount of threads who were still active
-    """
-    start = cur_time = time.time()
-    while cur_time <= (start + timeout):
-        for thread in threads:
-            if thread.is_alive():
-                thread.join(timeout=0)
-        if all(not t.is_alive() for t in threads):
-            break
-        time.sleep(0.1)
-        cur_time = time.time()
-    else:
-        print(f"Force timeout after {timeout} seconds | ", end="  ")
-        return len([t for t in threads if t.is_alive()])
 
 
 def resize_font(message_list, event=None):
@@ -568,7 +511,7 @@ def confirm_config(tk_obj, ip, port):
     we can connect, if not do nothing.
     """
     global client_socket
-    update_key()
+    enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
     if ip in ["Enter IP", ""]:
         print("Must enter IP")
         return
@@ -601,7 +544,7 @@ def verify_connections(server_list):
     tries connecting to each.
     """
     ip = gethostbyname(gethostname())
-    connections = req.get(f'https://get-api-key-2021.herokuapp.com/forme/{ip}').json()['connections_for_me']
+    connections = post_request(f'/forme/{ip}')['connections_for_me']
     working_connections = []
     threads = []
     for item in connections:
@@ -613,20 +556,29 @@ def verify_connections(server_list):
     prt_str = f'On {join_all(threads, 1)} servers'
     if prt_str != "On None servers":
         print(prt_str)
+    try:
+        if len(working_connections) == 0:
+            server_list.delete(0, tk.END)
+            server_list.insert(tk.END, "No available servers.")
+            server_list.config(state=tk.DISABLED)
+        else:
+            server_list.config(state=tk.NORMAL)
 
-    # Delete everything, then re-add valid ones
-    server_list.delete(0, tk.END)
-    if len(working_connections) == 0:
-        server_list.insert(tk.END, "No available servers.")
-        server_list.config(state=tk.DISABLED)
-    else:
-        server_list.config(state=tk.NORMAL)
-        server_list.delete(0, tk.END)
+        # Map existing ones, and delete the inactive
+        currently_listed = server_list.get(0, tk.END)
 
-    for address in working_connections:
-        ip = address[0]
-        port = address[1]
-        server_list.insert(tk.END, f"{ip}:{port}")
+        # Loop over all WORKING connections, and add the non-listed ones
+        for i, connection in enumerate(working_connections):
+            if connection not in currently_listed:
+                ip, port = connection.split(":")
+                server_list.insert(tk.END, f"{ip}:{port}")
+
+        # Loop over LISTED connections and delete not working ones.
+        for i, listed in enumerate(currently_listed):
+            if listed not in working_connections:
+                server_list.delete(i)
+    except Exception as e:
+        print(f"Error {e} has occured when trying to refresh server list.")
 
 
 def get_selection_confirm(tk_obj, list):
@@ -637,6 +589,8 @@ def get_selection_confirm(tk_obj, list):
     we can connect, if not, refresh the active
     server list.
     """
+    global load_servers
+
     selection = list.curselection()
     if selection:
         index = selection[0]
@@ -645,8 +599,9 @@ def get_selection_confirm(tk_obj, list):
         port = int(text[text.find(":") + 1:])
 
         # noinspection PyTypeChecker
-        works = check_option([ip,port], []) == 1
+        works = check_option([ip, port], []) == 1
         if works:
+            load_servers()
             confirm_config(tk_obj, ip, port)
         else:
             verify_connections(list)
@@ -677,7 +632,7 @@ def chat_room(tk_obj):
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     scrollbar = tk.Scrollbar(messages_frame)
-    scrollbar.grid(row=0,column=2, sticky="wens")
+    scrollbar.grid(row=0, column=2, sticky="wens")
     msg_list = tk.Listbox(messages_frame, height=15, width=75, background="#2c2f33",
                           foreground="white", yscrollcommand=scrollbar.set)
     msg_list.insert(tk.END, "Loading you in. This may take a bit.")
@@ -837,8 +792,10 @@ def server_list(tk_obj):
     refresh.place(x=50, y=350, width=325, height=80)
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
-    load_servers = Thread(target=verify_connections(servers))
-    load_servers.start()
+    verify_connections(servers)
+
+    global load_servers
+    load_servers = call_repeatedly(10, verify_connections, servers)
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
 
