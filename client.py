@@ -610,7 +610,7 @@ def verify_connections(server_list):
         check_thread.start()
 
     # Don't print anything if we didn't timeout any threads
-    prt_str = f'On {join_all(threads, 1)} servers'
+    prt_str = f'On {join_all(threads, 2)} servers'
     if prt_str != "On None servers":
         print(prt_str)
 
