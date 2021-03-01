@@ -65,7 +65,10 @@ COMMAND_PREFIX = "/"
 
 
 def format_message(msg_type, color, display, data):
-    return msg_type+msg_len(data)+color+display+data
+    try:
+        x = msg_type+msg_len(data.encode())+color+display+data
+    except:
+        return msg_type+msg_len(data)+color+display+data
 
 
 def accept_incoming_connections():
@@ -284,6 +287,7 @@ def handle_command(data, client):
         if recipient != "invalid":
             data = "Message from " + clients[client][0] + ": " + ' '.join(args[2:])
             length = msg_len(data)
+            print(len(data), length)
             # oooo mysterious gray whisper colour
             color = colours['whisper-gray']
             msg_type = "SysCmd"

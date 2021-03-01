@@ -339,7 +339,7 @@ def receive(tk_obj, client_sock):
                 print("Color: " + color, end=" | ")
                 # Runs until it hits a command with length 0,
                 # Signaling the end of the communication.
-                print("Data:")
+                print("Data:", end=" ")
                 while next_command_size != "000":
                     display = client_socket.recv(1).decode()
                     data = client_socket.recv(int(next_command_size)).decode()
@@ -364,7 +364,7 @@ def receive(tk_obj, client_sock):
                     next_command_size = client_socket.recv(3).decode()
                     if next_command_size != "000":
                         color = client_sock.recv(6).decode()
-                        print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Data: ")
+                        print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Data: | {data} |")
                 # Example message:
                 # SysCmd018FFFFFF0Update user_num,01017FFFFFF0Update membersDan000
                 print('--------------------')
@@ -398,7 +398,7 @@ def receive(tk_obj, client_sock):
         except Exception as e:  # if we get any other error it's bc you messed up not me
             print("You dun messed up.", e)
             print("\nBut don't worry, we handled it.")
-            test = client_socket.recv(1024).decode()
+            test = client_socket.recv(100000).decode()
             if test:
                 print("Dumping data", test)
             break
