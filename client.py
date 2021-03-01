@@ -173,7 +173,7 @@ def format_message(args):
                 else:
                     msg = "usage_color"  # invalid, will not send
 
-        if command == "kick":
+        if command in ["kick", "boot"]:
             if len(args) < 2:
                 msg = f"usage_{command}"
             else:
@@ -213,6 +213,7 @@ def handle_incoming_command(data, tk_obj):
     :return: Handles, and returns the fitting data to display from a command.
     """
     global mode
+    print(data)
     if data[:7] == "[color]":
         return encrypt_few_words(data[7:], 1)
 
