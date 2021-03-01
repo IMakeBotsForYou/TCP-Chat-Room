@@ -203,7 +203,7 @@ def format_message(args):
         msg = encrypt_few_words(msg)
 
     length = msg_len(msg.encode())
-    return length, msg_type, color, msg
+    return msg_type, length, color, msg
 
 
 def handle_incoming_command(data, tk_obj):
@@ -440,10 +440,10 @@ def send(input_msg, tk_obj, event=None):
     if get == "":
         return
     enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
-    length, msg_type, color, data = format_message(get.split(" "))
+    msg_type, length, color, data = format_message(get.split(" "))
     msg = data
     if not typing_my_name[0]:
-        msg = f"{length}{msg_type}{color}{data}"
+        msg = f"{msg_type}{length}{color}{data}"
         print(F"\nSent: {msg}\n")
     input_msg.set("")
     if length != "000":
