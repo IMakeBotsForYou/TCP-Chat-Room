@@ -1,6 +1,4 @@
 """Server for multi-threaded (asynchronous) chat application."""
-from re import search
-from socket import AF_INET, socket, SOCK_STREAM, gethostbyname, gethostname  # , MSG_PEEK
 from helper_functions import *
 # Encryption key
 KEY = 0
@@ -440,12 +438,13 @@ def handle_client(client):  # Takes client socket as argument.
     """
     try:
         name = client.recv(50).decode()
-        banned_words = ["@", ":", COMMAND_PREFIX] + [x[0] for x in clients.values()]
+        banned_words = ["@", ":", COMMAND_PREFIX]
+        names = [x[0] for x in clients.values()]
 
         client.send("SysCmd".encode())  # start command chain
 
         banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
-
+        banned_words_used += [x for x in names if name == x]
         while len(banned_words_used) != 0 or (len(name) > 16 or len(name) < 3):
             if len(name) > 16 or len(name) < 3:
                 data = "Name must be between 3-16 characters"
@@ -461,6 +460,7 @@ def handle_client(client):  # Takes client socket as argument.
                 print(f"Illegal login attempt: {name} || {banned_words_used}")
             name = client.recv(50).decode()
             banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
+            banned_words_used += [x for x in names if name == x]
         print(f"{client}\n has registered as {name}")
         # client.send("000".encode())  # terminate command chain by sending command length 0.
 
@@ -495,7 +495,7 @@ def handle_client(client):  # Takes client socket as argument.
             length, msg_type, color = 0, "", ""
             try:
                 # print(f'Entire buffer: {client.recv(1000, MSG_PEEK)}')
-                length, msg_type, color = int(client.recv(3)), client.recv(6).decode(), client.recv(6).decode()
+                msg_type, length, color = client.recv(6).decode(), int(client.recv(3).decode()), client.recv(6).decode()
 
                 data = client.recv(length).decode()
                 clients[client][2] = int(time.time())
