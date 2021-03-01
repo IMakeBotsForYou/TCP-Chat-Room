@@ -56,7 +56,10 @@ def msg_len(data):
     :param data: The data we're getting the length of
     :return: Length of the encoded data, left-padded to be 3 digits long.
     """
-    return str(len(data)).zfill(3)
+    try:
+        return str(len(data.encode())).zfill(3)
+    except:
+        return str(len(data)).zfill(3)  # already encoded
 
 
 def encode(txt, key):
