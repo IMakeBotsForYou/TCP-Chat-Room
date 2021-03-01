@@ -140,7 +140,7 @@ def format_message(args):
     if msg == "quit()":
         return msg_len(msg.encode()), msg_type, color, msg
 
-    everyone_commands = ["kick", "color"]
+    everyone_commands = ["kick", "color", "boot"]
     you_commands = ["w", "whisper", "current", "online",
                     "login", "logout", "block", "nick",
                     "nickname", "help", "commands", "purge",
