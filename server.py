@@ -66,7 +66,7 @@ COMMAND_PREFIX = "/"
 
 def format_message(msg_type, color, display, data):
     try:
-        x = msg_type+msg_len(data.encode())+color+display+data
+        return msg_type+msg_len(data.encode())+color+display+data
     except:
         return msg_type+msg_len(data)+color+display+data
 
