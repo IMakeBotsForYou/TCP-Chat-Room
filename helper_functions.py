@@ -1,7 +1,11 @@
 from threading import Thread, Event
 import requests as req
 import time
-
+# put here to remove all the imports from server.py and client.py
+from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK, gethostname, gethostbyname
+from re import search
+import tkinter as tk
+from tkinter import messagebox as mb
 
 def post_request(path):
     return req.get("https://get-api-key-2021.herokuapp.com" + path).json()
@@ -32,6 +36,8 @@ def join_all(threads, timeout):
 
 def retrieve_key(last_update, KEY, force=False):
     """
+    :param last_update: last time the key was updated, if more than 60 ago, continue
+    :param KEY: The key being updated
     :param force: Forces the key update.
     This retrieves key from the heroku key api.
     """
@@ -79,4 +85,3 @@ def call_repeatedly(interval, func, *args):
 
     Thread(target=loop).start()
     return stopped.set
-

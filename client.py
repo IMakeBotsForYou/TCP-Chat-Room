@@ -317,7 +317,6 @@ def receive(tk_obj, client_sock):
     Friendly output, and handling of messages from the server.
     """
     while True:
-        enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
         try:
             msg_list = tk_obj.winfo_children()[0].winfo_children()[1]
             msg_list.see("end")
@@ -330,6 +329,7 @@ def receive(tk_obj, client_sock):
             print("New Message:")
             print("Type: " + msg_type, end=" | Entire message: ")
             print(client_sock.recv(1000, MSG_PEEK).decode())
+            enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
             if msg_type == "SysCmd":
                 next_command_size = client_socket.recv(3).decode()
                 print("Size: " + next_command_size, end=" | ")
@@ -801,7 +801,11 @@ def mode_select(tk_obj):
     Wanna enter a server on your own
     or get a list of active servers?
     """
-    global current_window
+    global current_window, load_servers
+    try:
+        load_servers()  # call to stop loop
+    except:
+        pass  # if error then we haven't began the loop yet
     current_window = 0
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
