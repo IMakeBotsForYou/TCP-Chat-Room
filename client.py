@@ -327,23 +327,21 @@ def receive(tk_obj, client_sock):
             # 6-Type 3-Length 6-Color 1-Display || Data
             msg_type = client_sock.recv(6).decode()
             print("New Message:")
-            print("Type: " + msg_type, end=" | Entire message: ")
-            print(client_sock.recv(1000, MSG_PEEK).decode())
+            print(F"Entire message:\n{client_sock.recv(1000, MSG_PEEK).decode()}")
+            # | Entire message:
             enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
             if msg_type == "SysCmd":
                 next_command_size = client_socket.recv(3).decode()
-                print("Size: " + next_command_size, end=" | ")
-
                 color = client_sock.recv(6).decode()
                 color = "2c2f33" if color == "NOBGCL" else color
-                print("Color: " + color, end=" | ")
+
                 # Runs until it hits a command with length 0,
                 # Signaling the end of the communication.
-                print("Data:", end=" ")
+
                 while next_command_size != "000":
                     display = client_socket.recv(1).decode()
                     data = client_socket.recv(int(next_command_size)).decode()
-                    print(data)
+                    print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Display: {display==1} | Data: {data}")
                     # 1 display | 0 don't display
                     if display == '1':
                         msg = handle_incoming_command(data=data, tk_obj=tk_obj)
@@ -364,7 +362,7 @@ def receive(tk_obj, client_sock):
                     next_command_size = client_socket.recv(3).decode()
                     if next_command_size != "000":
                         color = client_sock.recv(6).decode()
-                        print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Data: | {data} |")
+
                 # Example message:
                 # SysCmd018FFFFFF0Update user_num,01017FFFFFF0Update membersDan000
                 print('--------------------')
