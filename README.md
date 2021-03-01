@@ -1,4 +1,4 @@
-[Proper HTML](https://chat-room-docs-app.herokuapp.com/)
+[Proper HTML](http://tcp-chat-docs.herokuapp.com)
 <!DOCTYPE html>
 <html style="font-size: 16px;">
   <head>
