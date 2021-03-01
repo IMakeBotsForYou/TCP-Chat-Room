@@ -1,8 +1,4 @@
 """Script for Tkinter GUI chat client."""
-from socket import AF_INET, socket, SOCK_STREAM, MSG_PEEK, gethostname, gethostbyname
-from re import search
-import tkinter as tk
-from tkinter import messagebox as mb
 from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
@@ -356,8 +352,6 @@ def receive(tk_obj, client_sock):
                                 try:
                                     msg_list.insert(tk.END, line)
                                     last_item[0] += 1
-                                    print(msg_list.get(last_item[0]))
-                                    print(last_item[0])
                                     msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
                                 except tk.TclError:  # server closed
                                     pass
@@ -437,6 +431,7 @@ def go_to_dm(event, entry_field):
 
 def send(input_msg, tk_obj, event=None):
     """
+    :param tk_obj: root tk()
     :param input_msg: The entry field, from which we get the message
     :param event: send event (enter, send button)
     """
@@ -578,7 +573,7 @@ def verify_connections(server_list):
             if listed not in working_connections:
                 server_list.delete(i)
     except Exception as e:
-        print(f"Error {e} has occured when trying to refresh server list.")
+        print(f"Error {e} has occurred when trying to refresh server list.")
 
 
 def get_selection_confirm(tk_obj, list):
