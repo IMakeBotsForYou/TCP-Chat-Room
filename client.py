@@ -444,7 +444,7 @@ def send(input_msg, tk_obj, event=None):
     msg = data
     if not typing_my_name[0]:
         msg = f"{length}{msg_type}{color}{data}"
-        print(F"\n\nSent:{msg}\n")
+        print(F"\nSent: {msg}\n")
     input_msg.set("")
     if length != "000":
         try:
