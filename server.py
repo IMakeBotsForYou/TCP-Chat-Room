@@ -516,7 +516,7 @@ def handle_client(client):  # Takes client socket as argument.
                     broadcast(header + clients[client][0] + ": " + data)
                 else:
                     data, color = handle_command(data=data, client=client)
-                    header = "SysCmd" + str(len(data.encode())).zfill(3) + color + "1"
+                    header = "SysCmd" + msg_len(data) + color + "1"
                     if msg_type == "EvrCmd":
                         broadcast(header + data + "000")
 
