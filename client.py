@@ -144,7 +144,7 @@ def format_message(args):
     you_commands = ["w", "whisper", "current", "online",
                     "login", "logout", "block", "nick",
                     "nickname", "help", "commands", "purge",
-                    "reminder", "time"]
+                    "reminder", "time", "end", "close"]
 
     command = args[0][len(command_prefix):]
     if typing_my_name[0]:
