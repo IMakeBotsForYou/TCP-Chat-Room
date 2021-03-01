@@ -307,7 +307,7 @@ def handle_command(data, client):
             banned_keywords = ["{System}", "@", ":", COMMAND_PREFIX]
             # Can't have you messing up my shtuff
             if len([x for x in banned_keywords if recipient_name.find(x) != -1]) != 0:
-                return "Invalid nickname".encode()
+                return "Invalid nickname".encode(), colours['red']
 
             recipient, _ = get_client(recipient_name)
             # Check if that's one of the already existing names
