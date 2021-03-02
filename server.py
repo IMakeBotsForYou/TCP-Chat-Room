@@ -171,16 +171,22 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
         user = "%s has left the chat." % clients[client][0]
         length = msg_len(user)
         broadcast(f"SysCmd{length}NOBGCL1{user}000")
-    if delete:
-        print(f"Deleted {clients[client]}")
-        del clients[client]
-        del addresses[client]
-        print(f"{len(clients.values())} Users remaining")
+
     try:
         # # # # # # # #  Type     Length    Colour        Display      Message      # # # # # # # #
         client.send(("SysCmd" + "013" + colours['white'] + "0" + "Kindly, leave" + "000").encode())
+
+        if delete:
+            print(f"Deleted {clients[client]}")
+            del clients[client]
+            del addresses[client]
+            print(f"{len(clients.values())} Users remaining")
+
     except ConnectionResetError:
         pass
+    except Exception as E:
+        print(E)
+
     send_update(start_chain=True, end_chain=True)
 
 
@@ -269,6 +275,8 @@ def handle_command(data, client):
             return f"Reminder interval changed to {seconds}", colours['low-green']
         except ValueError:
             data = "usage_reminder"
+        except Exception as e:
+            print(e)
 
     if command in ["commands", "help"]:
         data = command_list
@@ -500,7 +508,24 @@ def handle_client(client):  # Takes client socket as argument.
         while server_up[0]:
             length, msg_type, color = 0, "", ""
             try:
-                # print(f'Entire buffer: {client.recv(1000, MSG_PEEK)}')
+                x = client.recv(5000, MSG_PEEK).decode()
+                if x == "006NormalNOBGCLquit()":
+                    try:
+                        kick(client, message=False, delete=True, cl=False)
+                    except ConnectionResetError:  # 10054
+                        print("Client did an oopsie")
+                        del clients[client]
+                    except ConnectionAbortedError:
+                        print("Client did an oopsie")
+                        del clients[client]
+                    except OSError:
+                        print("Client did an oopsie")
+                        del clients[client]
+                    except KeyError:
+                        print(f"Client is already gone.")
+
+                    break
+
                 msg_type, length, color = client.recv(6).decode(), int(client.recv(3).decode()), client.recv(6).decode()
 
                 data = client.recv(length).decode()
