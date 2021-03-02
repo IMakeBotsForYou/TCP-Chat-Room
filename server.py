@@ -530,7 +530,7 @@ def handle_client(client):  # Takes client socket as argument.
 
                 data = client.recv(length).decode()
                 clients[client][2] = int(time.time())
-                print(F"{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
+                print(F"{'<ADMIN> ' if clients[client][1] else ''}{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
             except ConnectionResetError:  # 10054
                 connection_working = False
             except ConnectionAbortedError:
@@ -539,8 +539,9 @@ def handle_client(client):  # Takes client socket as argument.
             if connection_working and data != "quit()":
                 if msg_type == "Normal":
                     # 6-Type 3-Length 6-Color || Data  # normal message always displayed
-                    header = "Normal" + str(len(f"{clients[client][0]}: {data}".encode())).zfill(3) + color
-                    broadcast(header + clients[client][0] + ": " + data)
+                    m = F"{'<ADMIN> ' if clients[client][1] else ''}{clients[client][0]}: {data}"
+                    header = "Normal" + msg_len(m) + color
+                    broadcast(header + m)
                 else:
                     data, color = handle_command(data=data, client=client)
                     header = "SysCmd" + msg_len(data) + color + "1"
@@ -549,7 +550,6 @@ def handle_client(client):  # Takes client socket as argument.
 
                     elif msg_type == "SlfCmd":
                         client.send((header + data + "000").encode())
-
             else:
                 try:
                     kick(client, message=False, delete=True, cl=False)
