@@ -51,9 +51,10 @@ command_list = ["Command List:",
                 "/reminder <seconds>: Remind you to talk after x seconds",
                 "/login <password>: Try logging in as admin."]  # I do this so you can minimize the list
 command_list = "\n".join(command_list)
-
+# "/boot or /kick: kicks a user by username",
+#
 admin_cmd_list = ["/end, or /close: closes server",
-                  "/boot or /kick: kicks a user by username",
+                  "/kick: kicks a user by username",
                   "/color <#colour>: send message with bg colour",
                   "/logout: exit admin mode."]  # I do this so you can minimize the list
 admin_cmd_list = "\n".join(admin_cmd_list)
@@ -243,7 +244,8 @@ def handle_command(data, client):
     ignore = "ignore", "NOBGCL"
     if command == "time":
         return f"Current server time: |{time.ctime(time.time())}|", "NOBGCL"
-
+    if command == "boot":
+        return f"This command is currently disabled.", "NOBGCL"
     if command == "purge":
         try:
             number = int(args[1])
@@ -379,7 +381,7 @@ def handle_command(data, client):
             clients[client][1] = False
             return "Logged out.", colours['low-green']
 
-        if command in ["boot", "kick"]:
+        if command in ["kick"]:
             recipient_name = args[1]
             # Are we kicking an ip or a name?
             if search(r"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)",

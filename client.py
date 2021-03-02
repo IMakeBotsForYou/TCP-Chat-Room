@@ -138,7 +138,7 @@ def format_message(args):
         msg = ""
 
     if msg == "quit()":
-        return msg_len(msg.encode()), msg_type, color, msg
+        return msg_type, msg_len(msg.encode()), color, msg
 
     everyone_commands = ["kick", "color", "boot"]
     you_commands = ["w", "whisper", "current", "online",
@@ -341,7 +341,7 @@ def receive(tk_obj, client_sock):
                 while next_command_size != "000":
                     display = client_socket.recv(1).decode()
                     data = client_socket.recv(int(next_command_size)).decode()
-                    print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Display: {display==1} | Data: {data}")
+                    print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Display: {display=='1'} | Data: {data}")
                     # 1 display | 0 don't display
                     if display == '1':
                         msg = handle_incoming_command(data=data, tk_obj=tk_obj)

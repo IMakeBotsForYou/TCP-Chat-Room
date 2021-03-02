@@ -2,4 +2,4 @@ Requirements:
 	-An internet connection
 
 Documentation:
-https://chat-room-docs-app.herokuapp.com/
+http://tcp-chat-docs.herokuapp.com
