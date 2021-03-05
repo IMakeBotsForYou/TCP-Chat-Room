@@ -2,7 +2,6 @@
 from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
-
 # ----Functionality---- #
 current_window = 0
 mode = "none"
@@ -89,6 +88,7 @@ def on_closing(tk_obj, messenger=None, event=None):
     if current_window == 0:
         tk_obj.destroy()
 
+
     if current_window in [1, 2]:
         mode_select(tk_obj)
 
@@ -105,7 +105,6 @@ def on_closing(tk_obj, messenger=None, event=None):
             # Already wrote my name
             messenger.set("quit()")
             send(messenger, tk_obj)
-
 
 def encrypt_few_words(msg, start=0, end=-1):
     """
@@ -145,8 +144,10 @@ def format_message(args):
                     "login", "logout", "block", "nick",
                     "nickname", "help", "commands", "purge",
                     "reminder", "time", "end", "close"]
-
-    command = args[0][len(command_prefix):]
+    try:
+        command = args[0][len(command_prefix):]
+    except IndexError:
+        msg = "i'm stupid"
     if typing_my_name[0]:
         msg = "_".join(args)
         length = msg_len(msg)
@@ -327,9 +328,10 @@ def receive(tk_obj, client_sock):
             # 6-Type 3-Length 6-Color 1-Display || Data
             msg_type = client_sock.recv(6).decode()
             print("New Message:")
-            print(F"Entire message:\n{client_sock.recv(1000, MSG_PEEK).decode()}")
+            print(F"Entire message: {client_sock.recv(1000, MSG_PEEK).decode()}")
             # | Entire message:
             enc_vars['last_update'], enc_vars['key'] = retrieve_key(enc_vars['last_update'], enc_vars['key'])
+
             if msg_type == "SysCmd":
                 next_command_size = client_socket.recv(3).decode()
                 color = client_sock.recv(6).decode()
@@ -357,8 +359,7 @@ def receive(tk_obj, client_sock):
                                     msg_list.itemconfig(last_item[0], bg='#C28241')
 
                     else:
-                        _ = handle_incoming_command(data=data, tk_obj=tk_obj)
-
+                        msg = handle_incoming_command(data=data, tk_obj=tk_obj)
                     next_command_size = client_socket.recv(3).decode()
                     if next_command_size != "000":
                         color = client_sock.recv(6).decode()
@@ -372,6 +373,7 @@ def receive(tk_obj, client_sock):
                 msg = client_sock.recv(int(size)).decode()
                 current_user = msg[:msg.find(": ")]
                 msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ') + 2:])}"
+                print(F"Through key --> {encrypt_few_words(msg)}")
                 for line in msg.split("\n"):
                     try:
                         msg_list.insert(tk.END, line)
@@ -849,3 +851,4 @@ if __name__ == "__main__":
     app = tk.Tk()
     mode_select(app)
     app.mainloop()
+    load_servers()

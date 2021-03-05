@@ -1,14 +1,11 @@
 """Server for multi-threaded (asynchronous) chat application."""
 from helper_functions import *
-import datetime
 # Encryption key
 KEY = 0
 # Last time the key was updated
 last_update = 0
 # Is the server still running? (For shutdown command)
 server_up = [True]
-t = datetime.datetime.now()
-log_file = open(f"server_log_{t.day}.{t.month}.{t.year}_{t.hour}-{t.minute}_.txt", "w")
 # Colours library
 colours = {
     "red": "dd0404",
@@ -89,10 +86,10 @@ def accept_incoming_connections():
             # 0 -> checker
             # 1 -> user
             if user_mode == "0":
-                print(f"We've been scanned by {client_address[0]}", file=log_file)
+                print(f"We've been scanned by {client_address[0]}")
                 continue
 
-            print(f"{client_address} has connected.", file=log_file)
+            print(f"{client_address} has connected.")
             data = "Greetings from the cave! Now type your name and press enter!\n" \
                    "After you login, Enter /help or /commands to see the command collection_list!\n" \
                    "If someone's text is jumbled up, please ask them to use /update_key."
@@ -101,7 +98,7 @@ def accept_incoming_connections():
             client.send((header + data + "000").encode())  # 000 => terminate command sequence
             addresses[client] = client_address
             Thread(target=handle_client, args=(client,)).start()
-            print(f"Starting thread for {client_address}", file=log_file)
+            print(f"Starting thread for {client_address}")
 
         except OSError:
             close_server()
@@ -179,15 +176,15 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
         client.send(("SysCmd" + "013" + colours['white'] + "0" + "Kindly, leave" + "000").encode())
 
         if delete:
-            print(f"Deleted {clients[client]}", file=log_file)
+            print(f"Deleted {clients[client]}")
             del clients[client]
             del addresses[client]
-            print(f"{len(clients.values())} Users remaining", file=log_file)
+            print(f"{len(clients.values())} Users remaining")
 
     except ConnectionResetError:
         pass
     except Exception as E:
-        print(E, file=log_file)
+        print(E)
 
     send_update(start_chain=True, end_chain=True)
 
@@ -231,9 +228,9 @@ def send_update(start_chain, end_chain):
     header = msg_len(data) + colours['white'] + "0"
     chain += header + data
     broadcast(chain)
-    print(f"Updated users list: {str(len(clients.values())).zfill(2)}-{', '.join([x[0] for x in clients.values()])}", end=" ", file=log_file)
+    print(f"Updated users list: {str(len(clients.values())).zfill(2)}-{', '.join([x[0] for x in clients.values()])}", end=" ")
     if end_chain:
-        print("with kill", file=log_file)
+        print("with kill")
         broadcast("000")  # kill command chain
 
 
@@ -279,7 +276,7 @@ def handle_command(data, client):
         except ValueError:
             data = "usage_reminder"
         except Exception as e:
-            print(e, file=log_file)
+            print(e)
 
     if command in ["commands", "help"]:
         data = command_list
@@ -300,7 +297,7 @@ def handle_command(data, client):
         if recipient != "invalid":
             data = "Message from " + clients[client][0] + ": " + ' '.join(args[2:])
             length = msg_len(data)
-            print(len(data), length, file=log_file)
+            print(len(data), length)
             # oooo mysterious gray whisper colour
             color = colours['whisper-gray']
             msg_type = "SysCmd"
@@ -353,7 +350,7 @@ def handle_command(data, client):
             color = colours['orange-warning']
             return data, color
         else:
-            print(f"Logging {clients[client][0]} in", file=log_file)
+            print(f"Logging {clients[client][0]} in")
 
             last_update, KEY = retrieve_key(last_update, KEY)
             passw = encode(''.join(args[1:]), KEY)
@@ -361,7 +358,7 @@ def handle_command(data, client):
             clients[client][1] = passw == admin_pass
             success = passw == admin_pass
             # Decode what the user has sent.
-            print('Logged in!' if success else "Login failed.", file=log_file)
+            print('Logged in!' if success else "Login failed.")
 
             data = 'Logged in!' if success else "Login failed."
             color = colours['low-green'] if success else colours['red']
@@ -405,7 +402,7 @@ def handle_command(data, client):
                     kick_msg = ' '.join(args[2:])
                 else:
                     kick_msg = ""
-                print(f"\n{recipient_name} kicked for {kick_msg}\n", file=log_file)
+                print(f"\n{recipient_name} kicked for {kick_msg}\n")
                 kick(recipient, delete=True, message=True, custom=kick_msg, cl=True)
                 # it's gonna say that he left anyway so cl is true here
                 send_update(start_chain=True, end_chain=True)
@@ -474,14 +471,14 @@ def handle_client(client):  # Takes client socket as argument.
                 header = msg_len(data) + "DD0909" + "1"
                 client.send((header + data).encode())
             if name:
-                print(f"Illegal login attempt: {name} || {banned_words_used}", file=log_file)
+                print(f"Illegal login attempt: {name} || {banned_words_used}")
             name = client.recv(50).decode()
             banned_words_used = [key_word for key_word in banned_words if name.find(key_word) != -1]
             banned_words_used += [x for x in names if name == x]
-        print(f"{client}\n has registered as {name}", file=log_file)
+        print(f"{client}\n has registered as {name}")
 
     except ConnectionResetError:  # 10054
-        print("Client error'd out.", file=log_file)
+        print("Client error'd out.")
         del addresses[client]
     except ConnectionAbortedError:
         # user checking ports
@@ -520,16 +517,16 @@ def handle_client(client):  # Takes client socket as argument.
                     try:
                         kick(client, message=False, delete=True, cl=False)
                     except ConnectionResetError:  # 10054
-                        print("Client did an oopsie", file=log_file)
+                        print("Client did an oopsie")
                         del clients[client]
                     except ConnectionAbortedError:
-                        print("Client did an oopsie", file=log_file)
+                        print("Client did an oopsie")
                         del clients[client]
                     except OSError:
-                        print("Client did an oopsie", file=log_file)
+                        print("Client did an oopsie")
                         del clients[client]
                     except KeyError:
-                        print(f"Client is already gone.", file=log_file)
+                        print(f"Client is already gone.")
 
                     break
 
@@ -537,7 +534,7 @@ def handle_client(client):  # Takes client socket as argument.
 
                 data = client.recv(length).decode()
                 clients[client][2] = int(time.time())
-                print(F"{'<ADMIN> ' if clients[client][1] else ''}{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})", file=log_file))
+                print(F"{'<ADMIN> ' if clients[client][1] else ''}{clients[client][0]}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
             except ConnectionResetError:  # 10054
                 connection_working = False
             except ConnectionAbortedError:
@@ -561,16 +558,16 @@ def handle_client(client):  # Takes client socket as argument.
                 try:
                     kick(client, message=False, delete=True, cl=False)
                 except ConnectionResetError:  # 10054
-                    print("Client did an oopsie", file=log_file)
+                    print("Client did an oopsie")
                     del clients[client]
                 except ConnectionAbortedError:
-                    print("Client did an oopsie", file=log_file)
+                    print("Client did an oopsie")
                     del clients[client]
                 except OSError:
-                    print("Client did an oopsie", file=log_file)
+                    print("Client did an oopsie")
                     del clients[client]
                 except KeyError:
-                    print(f"Client is already gone.", file=log_file)
+                    print(f"Client is already gone.")
                 break
         # except Exception as e:
         #     print(f"An error has occured.\n{e}")
@@ -590,15 +587,15 @@ PORT = 45_000
 
 mode = input("WAN server or LAN server?  (wan/lan) > ").lower()
 while mode not in ["wan", "lan"]:
-    print("Invalid.", file=log_file)
+    print("Invalid.")
     mode = input("WAN server or LAN server?  (wan/lan) > ").lower()
 
 """
 If mode is lan, then choose a random port and host on NAT
-If mode is wan, assume user has set up port forwarding, 
+If mode is wan, assume user has set up port forwarding,
 and request a port to host the server on.
 """
-
+ip, port = 0, 0
 stop_calling = None
 if mode == "lan":
     # LAN server, pick a random port.
@@ -621,24 +618,24 @@ else:
         port = input("Enter PortForwarding PORT > ")
     port = int(port)
     ADDR = (HOST, port)
-    c_ip = req.get('https://api.ipify.org').text
+    ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
-    post_request(f"/servers/add/{c_ip}/{port}/wan")
+    post_request(f"/servers/add/{ip}/{port}/wan")
     # Add the server to active connections
     # calls after 10 second delay, then every 10 seconds
-    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{c_ip}/{port}/wan")
+    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{ip}/{port}/wan")
 
 clients = {}
 addresses = {}
 
 SERVER.listen(5)
-print(f"---------------------------------------------------------", file=log_file)
-print(f"Starting {mode} server, on {ip}:{port}, @ {time.ctime(time.time())}", file=log_file)
-print("Waiting for connection...", file=log_file)
-
+print(f"---------------------------------------------------------")
+print(f"Starting {mode} server, on {ip}:{port}, @ {time.ctime(time.time())}")
+print("Waiting for connection...")
 accept_incoming_connections()
+
 SERVER.close()
 stop_calling()
-print(f"END LOG", file=log_file)
-print(f"---------------------------------------------------------", file=log_file)
+print(f"END LOG")
+print(f"---------------------------------------------------------")
 log_file.close()
