@@ -88,7 +88,6 @@ def on_closing(tk_obj, messenger=None, event=None):
     if current_window == 0:
         tk_obj.destroy()
 
-
     if current_window in [1, 2]:
         mode_select(tk_obj)
 
@@ -105,6 +104,7 @@ def on_closing(tk_obj, messenger=None, event=None):
             # Already wrote my name
             messenger.set("quit()")
             send(messenger, tk_obj)
+
 
 def encrypt_few_words(msg, start=0, end=-1):
     """
@@ -148,6 +148,8 @@ def format_message(args):
         command = args[0][len(command_prefix):]
     except IndexError:
         msg = "i'm stupid"
+    except Exception as e:
+        print(e)
     if typing_my_name[0]:
         msg = "_".join(args)
         length = msg_len(msg)
@@ -614,6 +616,7 @@ def chat_room(tk_obj):
     # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
         child.destroy()
+
     tk_obj.title("Chatter")
     tk_obj.resizable(width=True, height=True)
     tk_obj.minsize(700, 150)
