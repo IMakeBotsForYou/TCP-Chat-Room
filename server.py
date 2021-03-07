@@ -608,7 +608,7 @@ if mode == "lan":
     # Add the server to active connections
     post_request(f"/servers/add/{ip}/{port}/local")
     # calls after 10 second delay, then every 10 seconds
-    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{ip}/{port}/local")
+    stop_calling = call_repeatedly(45, post_request, f"/servers/add/{ip}/{port}/local")
 
 else:
     SERVER = socket(AF_INET, SOCK_STREAM)
