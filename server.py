@@ -623,7 +623,7 @@ else:
     post_request(f"/servers/add/{ip}/{port}/wan")
     # Add the server to active connections
     # calls after 10 second delay, then every 10 seconds
-    stop_calling = call_repeatedly(10, post_request, f"/servers/add/{ip}/{port}/wan")
+    stop_calling = call_repeatedly(45, post_request, f"/servers/add/{ip}/{port}/wan")
 
 clients = {}
 addresses = {}
