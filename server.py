@@ -2,6 +2,7 @@
 from helper_functions import *
 # Encryption key
 KEY = 0
+port = 0
 # Last time the key was updated
 last_update = 0
 # Is the server still running? (For shutdown command)
@@ -62,6 +63,10 @@ admin_cmd_list = "\n".join(admin_cmd_list)
 admin_password = "danIsTheKing"
 # Command prefix for user
 COMMAND_PREFIX = "/"
+# camera sockets list
+cameras = {}
+clients = {}
+addresses = {}
 
 
 def format_message(msg_type, color, display, data):
@@ -85,8 +90,16 @@ def accept_incoming_connections():
             # Are you a scanner or a client?
             # 0 -> checker
             # 1 -> user
+            # 2 -> camera
+
             if user_mode == "0":
                 print(f"We've been scanned by {client_address[0]}")
+                continue
+
+            if user_mode == "2":
+                camera = Thread(target=lambda: handle_camera(client, client_address))
+                camera.start()
+                cameras[client] = client_address
                 continue
 
             print(f"{client_address} has connected.")
@@ -206,37 +219,31 @@ def close_server():
     SERVER.close()
 
 
-def handle_camera(port, user, nick):
-    global ip
-    camera_server = socket(AF_INET, SOCK_STREAM)
-    camera_server.bind((ip, port))
-    camera_server.listen(5)
-    clients[user]["camera_sock"], _ = camera_server.accept()
-    client = clients[user]["camera_sock"]
+def handle_camera(client, address):
+    global port
+    nick = F"{address[0]}:{address[1]}"
     while 1:
         try:
-            a = client.recv(25, MSG_PEEK).decode()
-            if not search("^\d{10}", a):
-                _ = client.recv(500*1000)
-            if a.find("failed") != -1:
+            x = client.recv(16, MSG_PEEK)
+            if "failed".encode() in client.recv(100, MSG_PEEK):
                 raise IndexError
-            x = int(client.recv(5).decode())
-            y = int(client.recv(5).decode())
-            data = client.recv(x * y * 3)
-            frame = np.frombuffer(data, dtype="uint8")
-            frame.resize((x, y, 3))
-            cv2.imshow(nick, frame)
+            broadcast(f"{msg_len(nick, 3)}{nick}".encode() + client.recv(16, MSG_PEEK), cameras)
+            frame_size = int(client.recv(8).decode())
+            _ = int(client.recv(8).decode())
+            # we don't need the dimensions here
+            data = client.recv(frame_size)
+            broadcast(data, cameras)
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-        except ValueError:
-            print(f"{nick}'s camera had an oopsie, it's alright though")
-            _ = client.recv(25)
-        except Exception as e:
-            print(e)
-            break
+                 break
+        except IndexError:
+            pass
+        except MemoryError:
+            pass
+        except Exception:
+            pass
     try:
         cv2.destroyWindow(nick)
-        print("uh oh")
+        print(f"{nick} has logged out")
     except:
         pass
 
@@ -529,18 +536,6 @@ def handle_client(client):  # Takes client socket as argument.
         connection_working = True
         # get a port that's free for both the server
         # and the client, to communicate on the camera port.
-        camera_port = 0
-        res = "0"
-        while res != "1":
-            user_camera_port = socket(AF_INET, SOCK_STREAM)
-            user_camera_port.bind(("", 0))
-            camera_port = user_camera_port.getsockname()[1]
-            data = f"camera_port:{camera_port}"
-            header = msg_len(data) + "NOBGCL" + "0"
-            client.send((header + data).encode())
-            res = client.recv(1).decode()
-            print(camera_port)
-
         data = 'Welcome %s! If you ever want to quit, type quit() or press [X] to exit.' % name
         header = msg_len(data) + "NOBGCL" + "1"
         # 6-Type 3-Length 6-Color 1-Display || Data
@@ -560,10 +555,8 @@ def handle_client(client):  # Takes client socket as argument.
             "reminder_function": call_repeatedly(5, why_arent_you_talking, client),
             "camera_sock": socket(AF_INET, SOCK_STREAM)
         }
-        global ip
-
-        camera = Thread(target=lambda: handle_camera(camera_port, client, clients[client]["nick"]))
-        camera.start()
+        data = "connect_camera"
+        client.send(f"SysCmd{msg_len(data)}NOBGCL0{data}000".encode())
         # Chain already started in previous broadcast
         send_update(start_chain=True, end_chain=True)
         # try:
@@ -629,11 +622,15 @@ def handle_client(client):  # Takes client socket as argument.
         #     print(f"An error has occured.\n{e}")
 
 
-def broadcast(msg):
+def broadcast(msg, list=None):
     """Broadcasts a message to all the clients."""
-    for sock in clients:
+    if list is None:
+        list = clients
+    for sock in list:
         try:
             sock.send(msg.encode())
+        except AttributeError:
+            sock.send(msg)
         except ConnectionResetError:  # 10054
             pass
 
@@ -657,6 +654,7 @@ if mode == "lan":
     # LAN server, pick a random port.
     PORT = 0
     SERVER = socket(AF_INET, SOCK_STREAM)
+    SERVER.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     ADDR = (HOST, PORT)
     SERVER.bind(ADDR)
     ip = gethostbyname(gethostname())
@@ -668,21 +666,19 @@ if mode == "lan":
 
 else:
     SERVER = socket(AF_INET, SOCK_STREAM)
-
+    SERVER.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     port = input("Enter PortForwarding PORT > ")
     while not port.isnumeric():
         port = input("Enter PortForwarding PORT > ")
     port = int(port)
     ADDR = (HOST, port)
+    print(ADDR)
     ip = req.get('https://api.ipify.org').text
     SERVER.bind(ADDR)
     post_request(f"/servers/add/{ip}/{port}/wan")
     # Add the server to active connections
     # calls after 10 second delay, then every 10 seconds
     stop_calling = call_repeatedly(45, post_request, f"/servers/add/{ip}/{port}/wan")
-
-clients = {}
-addresses = {}
 
 SERVER.listen(5)
 print(f"---------------------------------------------------------")

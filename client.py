@@ -3,6 +3,7 @@ from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
 import warnings
+
 warnings.filterwarnings("ignore")
 # ----Functionality---- #
 current_window = 0
@@ -244,9 +245,12 @@ def send_blank(socket):
 def send_camera_footage():
     global current_window
     socket = camera["socket"]
+    socket.send("2".encode())
     available = get_available_devices()
     if len(available) > 0:
         cap = cv2.VideoCapture(get_available_devices()[0], cv2.CAP_DSHOW)
+        cap.set(3, 400)
+        cap.set(4, 300)
     else:
         socket.send("failed".encode())
         return
@@ -256,12 +260,18 @@ def send_camera_footage():
             size = frame.shape
             # make strings with the length of the dimensions
             x, y = size[0] * ".", size[1] * "."
-            header = (msg_len(x, 5) + msg_len(y, 5)).encode()
             data = frame.tobytes()
-            socket.send(header + data)
+            header = (msg_len(data, 8) + msg_len(x, 4) + msg_len(y, 4)).encode()
+            socket.send(header)
+            socket.send(data)
             cv2.waitKey(1)
+
         except AttributeError:
-           send_blank(socket)
+            send_blank(socket)
+        except ConnectionAbortedError:
+            break
+        except ConnectionResetError:
+            break
         except Exception as e:
             print(e)
             socket.send("failed".encode())
@@ -270,8 +280,31 @@ def send_camera_footage():
             print("broken")
             pass
             break
-    print("End")
     cap.release()
+    cv2.destroyAllWindows()
+
+
+def receive_camera_data():
+    global current_window
+    sock = camera["socket"]
+    while current_window == 3:
+        try:
+            name_length = int(sock.recv(3).decode())
+            name = sock.recv(name_length).decode()
+
+            frame_size = int(sock.recv(8).decode())
+            x = int(sock.recv(4).decode())
+            y = int(sock.recv(4).decode())
+            data = sock.recv(frame_size)
+
+            frame = np.frombuffer(data, dtype="uint8")
+            frame.resize((x, y, 3))
+            cv2.imshow(name, frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        except ValueError:
+            pass
     cv2.destroyAllWindows()
 
 
@@ -283,31 +316,15 @@ def handle_incoming_command(data, tk_obj):
     """
     global mode
     # this will always run first, to figure out an open camera port
-    if data.find("camera_port:") != -1:
-        data = data[find_end(data, "camera_port:"):]
-        port = 1
-        try:
-            port = int(data)
-        except ValueError:
-            print("Invalid port")
-        except Exception as e:
-            print(e)
-        tester = socket(AF_INET, SOCK_STREAM)
-        print("testing port.")
-        try:
-            tester.bind(('127.0.0.1', port))
-            print('success')
-            client_socket.send("1".encode())
-            camera["port"] = port
-        except Exception as e:
-            print(e)
-            print(f"Port {port} was taken, requesting new one.")
-            client_socket.send("2".encode())
-        else:
-            camera["socket"].connect((client_socket.getpeername()[0], port))
-            print("Connected camera on port", port)
-            camera["thread"] = Thread(target=send_camera_footage)
-            camera["thread"].start()
+    if data.find("connect_camera") != -1:
+        print("Starting camera")
+        camera["socket"] = socket(AF_INET, SOCK_STREAM)
+        camera["socket"].connect(client_socket.getpeername())
+        camera["send_thread"] = Thread(target=send_camera_footage)
+        camera["send_thread"].start()
+
+        camera["recv_thread"] = Thread(target=receive_camera_data)
+        camera["recv_thread"].start()
 
     elif data[:7] == "[color]":
         return encrypt_few_words(data[7:], 1)
@@ -400,7 +417,7 @@ def purge(amount, listbox):
         start = 4
         listbox.delete(start, listbox.size() - 1)
         listbox.insert(tk.END, "Can't delete first 4 messages")
-        last_item[0] = listbox.size()-1
+        last_item[0] = listbox.size() - 1
     else:
         listbox.delete(start, listbox.size() - 1)
         last_item[0] = last_item[0] - amount
@@ -438,7 +455,8 @@ def receive(tk_obj, client_sock):
                 while next_command_size != "000":
                     display = client_socket.recv(1).decode()
                     data = client_socket.recv(int(next_command_size)).decode()
-                    print(f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Display: {display=='1'} | Data: {data}")
+                    print(
+                        f"Type: SysCmd | Size: {next_command_size} | Color: {color} | Display: {display == '1'} | Data: {data}")
                     # 1 display | 0 don't display
                     if display == '1':
                         msg = handle_incoming_command(data=data, tk_obj=tk_obj)
