@@ -28,6 +28,7 @@ usage = {
     "nickname": "/nickname new_name: Rename Yourself!",
     "w": "/w name: whisper to someone",
     "whisper": "/whisper name: whisper to someone",
+    "quality": "/quality percent: Change your camera quality \n(maxed by amount of people) in chat",
     # "online": "/online: show who's online!",   # One parameter commands never get usage'd
     # "current": "/current: show who's online!", # One parameter commands never get usage'd
     # "time": "/time: shows the server time",    # One parameter commands never get usage'd
@@ -316,6 +317,11 @@ def handle_command(data, client):
         return f"Current server time: |{time.ctime(time.time())}|", "NOBGCL"
     if command == "boot":
         return f"This command is currently disabled.", "NOBGCL"
+    if command == "quality":
+        if not args[1].isnumeric():
+            data = "usage_quality"
+        else:
+            return f"camera_quality|{args[1]}|", colours['pink']
     if command == "purge":
         try:
             number = int(args[1])

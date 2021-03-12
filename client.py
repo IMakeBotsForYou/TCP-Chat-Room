@@ -31,6 +31,7 @@ camera = {
     "sock": socket(AF_INET, SOCK_STREAM),
     "thread": Thread(),
     "port": 0,
+    "quality": 25,
     "displays": {}
 }
 load_servers = None
@@ -154,7 +155,7 @@ def format_message(args):
     you_commands = ["w", "whisper", "current", "online",
                     "login", "logout", "block", "nick",
                     "nickname", "help", "commands", "purge",
-                    "reminder", "time", "end", "close"]
+                    "reminder", "time", "end", "close", "quality"]
     command = ""
     try:
         command = args[0][len(command_prefix):]
@@ -264,12 +265,14 @@ def send_camera_footage():
         try:
             ret, frame = cap.read()
             size = frame.shape
-            quality = 25
-            if 6 > chatter_window["user_num_int"] > 3:
-                quality = 15
-            if chatter_window["user_num_int"] >= 6:
-                quality = 7
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+            if camera["quality"] in [25, 15, 7]:
+                quality = 20
+                if 6 > chatter_window["user_num_int"] > 3:
+                    quality = 15
+                elif chatter_window["user_num_int"] >= 6:
+                    quality = 5
+                camera["quality"] = quality
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), camera["quality"]]
             ret, data = cv2.imencode('.jpg', frame, encode_param)
 
             # make strings with the length of the dimensions
@@ -353,6 +356,18 @@ def handle_incoming_command(data, tk_obj):
         camera["recv_thread"] = Thread(target=receive_camera_data)
         camera["recv_thread"].start()
 
+    elif data[:14] == "camera_quality":
+        quality = int(re.search(r"\|(\d+)\|", data).groups(0)[0])
+        if 6 > chatter_window["user_num_int"] > 3:
+            quality = 15
+            return "Quality is currently capped at 15%"
+        elif chatter_window["user_num_int"] >= 6:
+            quality = 7
+            return "Quality is currently capped at 7%"
+        if quality > 25:
+            return "Quality is currently capped at 25"
+        camera["quality"] = quality
+        return "ignore"
     elif data[:7] == "[color]":
         return encrypt_few_words(data[7:], 1)
 
