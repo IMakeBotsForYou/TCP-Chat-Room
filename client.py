@@ -1,9 +1,11 @@
 """Script for Tkinter GUI chat client."""
+import math
+
 from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
+import io
 import warnings
-
 warnings.filterwarnings("ignore")
 # ----Functionality---- #
 current_window = 0
@@ -25,9 +27,10 @@ enc_vars = {
 
 # ----sockets part---- #
 camera = {
-    "socket": socket(AF_INET, SOCK_STREAM),
+    "sock": socket(AF_INET, SOCK_STREAM),
     "thread": Thread(),
-    "port": 0
+    "port": 0,
+    "displays": {}
 }
 load_servers = None
 BUFFER_SIZE = 1024
@@ -99,6 +102,7 @@ def on_closing(tk_obj, messenger=None, event=None):
     if current_window == 3:
         if typing_my_name[0]:
             # Still writing name, so we can't send quit message.
+            print("sentsds")
             if mode == "custom":
                 custom_server_select(tk_obj)
                 current_window = 2
@@ -107,6 +111,7 @@ def on_closing(tk_obj, messenger=None, event=None):
                 current_window = 1
         else:
             # Already wrote my name
+            camera["sock"].send("LEAVE".encode())
             messenger.set("quit()")
             send(messenger, tk_obj)
 
@@ -232,79 +237,95 @@ def get_available_devices():
     return arr
 
 
-def send_blank(socket):
+def send_blank(sock):
     size = 480, 680
     x, y = size[0] * ".", size[1] * "."
     data = np.array((480, 680, 3), dtype="uint8")
     data.fill(0)
     data = data.tobytes()
     header = (msg_len(x, 5) + msg_len(y, 5)).encode()
-    socket.send(header + data)
+    sock.send(header + data)
 
 
 def send_camera_footage():
     global current_window
-    socket = camera["socket"]
-    socket.send("2".encode())
+    sock = camera["sock"]
+    sock.send("2".encode())
     available = get_available_devices()
     if len(available) > 0:
-        cap = cv2.VideoCapture(get_available_devices()[0], cv2.CAP_DSHOW)
+        cap = cv2.VideoCapture(available[0], cv2.CAP_DSHOW)
         cap.set(3, 400)
-        cap.set(4, 300)
+        cap.set(4, 400)
     else:
-        socket.send("failed".encode())
+        sock.send("faild".encode())
         return
     while current_window == 3:
         try:
             ret, frame = cap.read()
             size = frame.shape
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 10]
+            ret, data = cv2.imencode('.jpg', frame, encode_param)
+
             # make strings with the length of the dimensions
             x, y = size[0] * ".", size[1] * "."
-            data = frame.tobytes()
-            header = (msg_len(data, 8) + msg_len(x, 4) + msg_len(y, 4)).encode()
-            socket.send(header)
-            socket.send(data)
+            diamensions_header = "".join([msg_len(str(dia), 4) for dia in [x, y]])
+            data = data.tobytes()
+            header = (diamensions_header + msg_len(data, 8)).encode()
+            sock.send(header + data)
             cv2.waitKey(1)
 
         except AttributeError:
-            send_blank(socket)
+            send_blank(sock)
         except ConnectionAbortedError:
             break
         except ConnectionResetError:
             break
-        except Exception as e:
-            print(e)
-            socket.send("failed".encode())
-            break
-        except:
-            print("broken")
-            pass
-            break
+        # except Exception as e:
+        #     print(e)
+        #     sock.send("failed".encode())
+        #     break
+        # except:
+        #     print("broken")
+        #     pass
+        #     break
     cap.release()
     cv2.destroyAllWindows()
 
 
 def receive_camera_data():
     global current_window
-    sock = camera["socket"]
+    sock = camera["sock"]
     while current_window == 3:
         try:
-            name_length = int(sock.recv(3).decode())
-            name = sock.recv(name_length).decode()
+            if "LEAVE".encode() in sock.recv(5, MSG_PEEK):
+                _ = sock.recv(5)
+                name_len = int(sock.recv(3).decode())
+                nick = sock.recv(name_len).decode()
+                cv2.destroyWindow(nick)
 
+            name_len = int(sock.recv(3).decode())
+            nick = sock.recv(name_len).decode()
+            diamensions = sock.recv(8)
             frame_size = int(sock.recv(8).decode())
-            x = int(sock.recv(4).decode())
-            y = int(sock.recv(4).decode())
-            data = sock.recv(frame_size)
 
+            data = sock.recv(frame_size)
+            while len(data) < frame_size:
+                data += sock.recv(frame_size-len(data))
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             frame = np.frombuffer(data, dtype="uint8")
-            frame.resize((x, y, 3))
-            cv2.imshow(name, frame)
+            frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+            frame.resize((int(diamensions[:4]), int(diamensions[4:]), 3))
+            cv2.imshow(nick, frame)
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
-
         except ValueError:
             pass
+        except AttributeError:
+            pass
+        except Exception as e:
+            print(e)
     cv2.destroyAllWindows()
 
 
@@ -318,8 +339,8 @@ def handle_incoming_command(data, tk_obj):
     # this will always run first, to figure out an open camera port
     if data.find("connect_camera") != -1:
         print("Starting camera")
-        camera["socket"] = socket(AF_INET, SOCK_STREAM)
-        camera["socket"].connect(client_socket.getpeername())
+        camera["sock"] = socket(AF_INET, SOCK_STREAM)
+        camera["sock"].connect(client_socket.getpeername())
         camera["send_thread"] = Thread(target=send_camera_footage)
         camera["send_thread"].start()
 
@@ -489,7 +510,7 @@ def receive(tk_obj, client_sock):
                 msg = client_sock.recv(int(size)).decode()
                 current_user = msg[:msg.find(": ")]
                 msg = f"{current_user}: {encrypt_few_words(msg[msg.find(': ') + 2:])}"
-                print(F"Through key --> {encrypt_few_words(msg)}")
+                print("Through key ->", msg)
                 for line in msg.split("\n"):
                     try:
                         msg_list.insert(tk.END, line)
@@ -968,4 +989,7 @@ if __name__ == "__main__":
     app = tk.Tk()
     mode_select(app)
     app.mainloop()
-    load_servers()
+    try:
+        load_servers()
+    except TypeError:
+        pass
