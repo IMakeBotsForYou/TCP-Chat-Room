@@ -1,10 +1,8 @@
 """Script for Tkinter GUI chat client."""
-import math
 
 from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
-import io
 import warnings
 warnings.filterwarnings("ignore")
 # ----Functionality---- #
@@ -15,9 +13,12 @@ command_prefix = "/"
 name = ""
 
 # ----TK_inters obj---- #
-last_item = [0]  # fix global
+chatter_window = {
+    "user_num": ".",
+    "last_item": 0,
+    "user_num_int": 0
+}
 online_num = [0]  # For the messages to be sent.
-online_member_number_but_its_an_int = [1]
 
 # ---- encryption ---- #
 enc_vars = {
@@ -263,7 +264,12 @@ def send_camera_footage():
         try:
             ret, frame = cap.read()
             size = frame.shape
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 10]
+            quality = 25
+            if 6 > chatter_window["user_num_int"] > 3:
+                quality = 15
+            if chatter_window["user_num_int"] >= 6:
+                quality = 7
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
             ret, data = cv2.imencode('.jpg', frame, encode_param)
 
             # make strings with the length of the dimensions
@@ -379,8 +385,8 @@ def handle_incoming_command(data, tk_obj):
         typing_my_name[0] = False
 
     elif data.find("Update user_num") != -1:
-        online_member_number_but_its_an_int[0] = int(data[data.find(",") + 1:])
-        online_num[0].set(f'Users online: {online_member_number_but_its_an_int}')
+        chatter_window['user_num_int'] = int(data[data.find(",") + 1:])
+        chatter_window['user_num'].set(f'Users online: [{chatter_window["user_num_int"]}]')
 
     elif data.find("Update members") != -1:
         members = data[14:].split("+")
@@ -438,10 +444,10 @@ def purge(amount, listbox):
         start = 4
         listbox.delete(start, listbox.size() - 1)
         listbox.insert(tk.END, "Can't delete first 4 messages")
-        last_item[0] = listbox.size() - 1
+        chatter_window['last_item'] = listbox.size() - 1
     else:
         listbox.delete(start, listbox.size() - 1)
-        last_item[0] = last_item[0] - amount
+        chatter_window['last_item'] = chatter_window['last_item'] - amount
 
 
 def receive(tk_obj, client_sock):
@@ -485,12 +491,12 @@ def receive(tk_obj, client_sock):
                             for line in msg.split("\n"):
                                 try:
                                     msg_list.insert(tk.END, line)
-                                    last_item[0] += 1
-                                    msg_list.itemconfig(last_item[0], bg=f'#{color}', fg=black_or_white(color))
+                                    chatter_window['last_item'] += 1
+                                    msg_list.itemconfig(chatter_window['last_item'], bg=f'#{color}', fg=black_or_white(color))
                                 except tk.TclError:  # server closed
                                     pass
                                 if line.find(f'@{name}') != -1:
-                                    msg_list.itemconfig(last_item[0], bg='#C28241')
+                                    msg_list.itemconfig(chatter_window['last_item'], bg='#C28241')
 
                     else:
                         try:
@@ -514,12 +520,12 @@ def receive(tk_obj, client_sock):
                 for line in msg.split("\n"):
                     try:
                         msg_list.insert(tk.END, line)
-                        last_item[0] += 1
-                        msg_list.itemconfig(last_item[0], bg=f'#{color}')
+                        chatter_window['last_item'] += 1
+                        msg_list.itemconfig(chatter_window['last_item'], bg=f'#{color}')
                     except tk.TclError:  # server closed
                         pass
                     if line.find(f'@{name}') != -1:
-                        msg_list.itemconfig(last_item[0], bg='#C28241')
+                        msg_list.itemconfig(chatter_window['last_item'], bg='#C28241')
             else:
                 test = msg_type + color + data + client_socket.recv(1024).decode()
                 if test:
@@ -792,8 +798,8 @@ def chat_room(tk_obj):
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     # noinspection PyTypeChecker
-    online_num[0] = tk.StringVar()
-    online_num[0].set("Users online: [Loading...]")
+    chatter_window['user_num'] = tk.StringVar()
+    chatter_window['user_num'].set("Users online: [Loading...]")
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     online_users = tk.Frame(tk_obj)
@@ -829,7 +835,7 @@ def custom_server_select(tk_obj):
     current_window = 2
 
     typing_my_name[0] = True
-    last_item[0] = 0
+    chatter_window['last_item'] = 0
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
@@ -882,7 +888,7 @@ def server_list(tk_obj):
     current_window = 2
 
     typing_my_name[0] = True
-    last_item[0] = 0
+    chatter_window['last_item'] = 0
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     for child in tk_obj.winfo_children():
@@ -948,7 +954,7 @@ def mode_select(tk_obj):
     # ---------------------------------------------------------------------------------------------------
     # ---------------------------------------------------------------------------------------------------
     typing_my_name[0] = True
-    last_item[0] = 0
+    chatter_window['last_item'] = 0
     for child in tk_obj.winfo_children():
         child.destroy()
     tk_obj.iconbitmap('./images/list.ico')

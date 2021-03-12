@@ -7,7 +7,7 @@ from re import search
 import tkinter as tk
 from tkinter import messagebox as mb
 import numpy as np
-import cv2
+import cv2, re
 
 
 def post_request(path):

@@ -226,6 +226,7 @@ def handle_camera(client, address):
     global port
     nick = F"{address[0]}:{address[1]}"
     run = True
+    display = True
     while run:
         try:
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -248,16 +249,18 @@ def handle_camera(client, address):
                 data += client.recv(frame_size - len(data))
 
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            frame = np.frombuffer(data, dtype="uint8")
-            frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-            frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
-            cv2.imshow(nick, frame)
+            if display:
+                frame = np.frombuffer(data, dtype="uint8")
+                frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+                frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
+                cv2.imshow(nick, frame)
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
             data = nick_header + (diamensions_header + msg_len(data, 8)).encode() + data
             broadcast(data, cameras)
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                cv2.destroyWindow(nick)
+                display=False
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         except:
             run=False
