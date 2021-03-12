@@ -1,5 +1,7 @@
 """Server for multi-threaded (asynchronous) chat application."""
+
 from helper_functions import *
+
 # Encryption key
 KEY = 0
 port = 0
@@ -71,9 +73,9 @@ addresses = {}
 
 def format_message(msg_type, color, display, data):
     try:
-        return msg_type+msg_len(data.encode())+color+display+data
+        return msg_type + msg_len(data.encode()) + color + display + data
     except:
-        return msg_type+msg_len(data)+color+display+data
+        return msg_type + msg_len(data) + color + display + data
 
 
 def accept_incoming_connections():
@@ -137,6 +139,7 @@ def why_arent_you_talking(client):
             clients[client]['last_message'] = current_time
     except KeyError:
         # If there's an error then stop looping this
+        kick(client, delete=True)
         return "stop"
 
 
@@ -222,30 +225,44 @@ def close_server():
 def handle_camera(client, address):
     global port
     nick = F"{address[0]}:{address[1]}"
-    while 1:
+    run = True
+    while run:
         try:
-            x = client.recv(16, MSG_PEEK)
-            if "failed".encode() in client.recv(100, MSG_PEEK):
-                raise IndexError
-            broadcast(f"{msg_len(nick, 3)}{nick}".encode() + client.recv(16, MSG_PEEK), cameras)
-            frame_size = int(client.recv(8).decode())
-            _ = int(client.recv(8).decode())
-            # we don't need the dimensions here
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+            buffer_check = client.recv(5, MSG_PEEK).decode()
+            if buffer_check in ["LEAVE", "faild"]:
+                nick_header = f"{msg_len(nick, 3)}{nick}"
+                broadcast(f"LEAVE{nick_header}", cameras)
+                run = False
+                continue
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+            nick_header = f"{msg_len(nick, 3)}{nick}".encode()
+            diamensions_header = client.recv(8).decode()
+            frame_size_s = client.recv(8).decode()
+            frame_size = int(frame_size_s)
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             data = client.recv(frame_size)
+            while len(data) < frame_size:
+                data += client.recv(frame_size - len(data))
+
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+            frame = np.frombuffer(data, dtype="uint8")
+            frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+            frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
+            cv2.imshow(nick, frame)
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+            data = nick_header + (diamensions_header + msg_len(data, 8)).encode() + data
             broadcast(data, cameras)
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                 break
-        except IndexError:
-            pass
-        except MemoryError:
-            pass
-        except Exception:
-            pass
-    try:
-        cv2.destroyWindow(nick)
-        print(f"{nick} has logged out")
-    except:
-        pass
+                break
+            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        except:
+            run=False
+    cv2.destroyWindow(nick)
+    print(f"{nick} has errored, or logged out.")
 
 
 def send_update(start_chain, end_chain):
@@ -270,7 +287,9 @@ def send_update(start_chain, end_chain):
     header = msg_len(data) + colours['white'] + "0"
     chain += header + data
     broadcast(chain)
-    print(f"Updated users list: {str(len(clients.values())).zfill(2)}-{', '.join([x['nick'] for x in clients.values()])}", end=" ")
+    print(
+        f"Updated users list: {str(len(clients.values())).zfill(2)}-{', '.join([x['nick'] for x in clients.values()])}",
+        end=" ")
     if end_chain:
         print("with kill")
         broadcast("000")  # kill command chain
@@ -330,7 +349,7 @@ def handle_command(data, client):
     if command in ["w", "whisper"]:
         recipient_name = args[1]
         recipient, _ = get_client(recipient_name)
-        # recipient (socket), recipient name (we already have it)
+        # recipient (sock), recipient name (we already have it)
         if recipient == client:
             # if recipient is caller
             return "You can't message yourself, dummy", colours['pink']
@@ -469,7 +488,7 @@ def handle_command(data, client):
         admin_command = usage[command][:6] == "admin_"
         if (not is_admin and admin_command) or (command not in usage):
             message = format_message(msg_type, colours['red'], "1", "Usage: Not a valid command")
-            client.send((message+"000").encode())
+            client.send((message + "000").encode())
             return ignore
 
         if admin_command:
@@ -480,13 +499,13 @@ def handle_command(data, client):
 
         data = f"Usage: {usage[command]}"
         message = format_message(msg_type, colours['red'], "1", data)
-        client.send((message+"000").encode())
+        client.send((message + "000").encode())
         return ignore
 
     return "No Command Activated", "NOBGCL"
 
 
-def handle_client(client):  # Takes client socket as argument.
+def handle_client(client):  # Takes client sock as argument.
     """
     Handles a single client connection.
     This is done by first registering a valid name.
@@ -529,7 +548,7 @@ def handle_client(client):  # Takes client socket as argument.
         pass
     except UnicodeDecodeError:
         data = "Something went wrong."
-        client.send(("SysCmd" + msg_len(data)+colours['red']+'1'+data+'000').encode())
+        client.send(("SysCmd" + msg_len(data) + colours['red'] + '1' + data + '000').encode())
         del addresses[client]
         pass
     else:
@@ -583,7 +602,9 @@ def handle_client(client):  # Takes client socket as argument.
                 msg_type, length, color = client.recv(6).decode(), int(client.recv(3).decode()), client.recv(6).decode()
                 data = client.recv(length).decode()
                 clients[client]['last_message'] = int(time.time())
-                print(F"{'<ADMIN> ' if clients[client]['admin'] else ''}{clients[client]['nick']}: {data}" + '{0:>50}'.format(F"({data.strip().split(' ')})"))
+                print(
+                    F"{'<ADMIN> ' if clients[client]['admin'] else ''}{clients[client]['nick']}: {data}" + '{0:>50}'.format(
+                        F"({data.strip().split(' ')})"))
             except ConnectionResetError:  # 10054
                 connection_working = False
             except ConnectionAbortedError:
@@ -632,7 +653,13 @@ def broadcast(msg, list=None):
         except AttributeError:
             sock.send(msg)
         except ConnectionResetError:  # 10054
-            pass
+            try:
+                print(f"Error in sending {msg} to {sock}")
+                pass
+            except ConnectionResetError:
+                continue
+            except ConnectionAbortedError:
+                continue
 
 
 HOST = ""
