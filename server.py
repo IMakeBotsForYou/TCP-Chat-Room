@@ -142,6 +142,9 @@ def why_arent_you_talking(client):
         # If there's an error then stop looping this
         kick(client, delete=True)
         return "stop"
+    except Exception as e:
+        print(e)
+        del clients[client]
 
 
 def get_client(val, ip=False):
@@ -196,7 +199,7 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
             print(f"Deleted {clients[client]}")
             del clients[client]
             del addresses[client]
-            print(f"{len(clients.values())} Users remaining")
+            print(f"{len(clients.values())} Users remaining, with {len(cameras)} cameras active.")
 
     except ConnectionResetError:
         pass
@@ -228,44 +231,45 @@ def handle_camera(client, address):
     nick = F"{address[0]}:{address[1]}"
     run = True
     while run:
-        try:
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            buffer_check = client.recv(5, MSG_PEEK).decode()
-            if buffer_check in ["LEAVE", "faild"]:
-                nick_header = f"{msg_len(nick, 3)}{nick}"
-                broadcast(f"LEAVE{nick_header}", cameras)
-                run = False
-                continue
+        # try:
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        buffer_check = client.recv(5, MSG_PEEK).decode()
+        if buffer_check in ["LEAVE", "faild"]:
+            nick_header = f"{msg_len(nick, 3)}{nick}"
+            broadcast(f"LEAVE{nick_header}", cameras)
+            del cameras[client]
+            run = False
+            continue
 
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            nick_header = f"{msg_len(nick, 3)}{nick}".encode()
-            diamensions_header = client.recv(8).decode()
-            frame_size_s = client.recv(8).decode()
-            frame_size = int(frame_size_s)
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        nick_header = f"{msg_len(nick, 3)}{nick}".encode()
+        diamensions_header = client.recv(8).decode()
+        frame_size_s = client.recv(8).decode()
+        frame_size = int(frame_size_s)
 
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            data = client.recv(frame_size)
-            while len(data) < frame_size:
-                data += client.recv(frame_size - len(data))
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        data = client.recv(frame_size)
+        while len(data) < frame_size:
+            data += client.recv(frame_size - len(data))
 
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        # if display:
+        #     frame = np.frombuffer(data, dtype="uint8")
+        #     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+        #     frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
+        #     cv2.imshow(nick, frame)
+        # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+        data = nick_header + (diamensions_header + msg_len(data, 8)).encode() + data
+        broadcast(data, cameras)
+        # print(len(cameras))
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            cv2.destroyWindow(nick)
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            # if display:
-            #     frame = np.frombuffer(data, dtype="uint8")
-            #     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-            #     frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
-            #     cv2.imshow(nick, frame)
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-            data = nick_header + (diamensions_header + msg_len(data, 8)).encode() + data
-            broadcast(data, cameras)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                cv2.destroyWindow(nick)
-                display=False
-            # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-        except:
-            print("Displayed")
-            run=False
-    cv2.destroyWindow(nick)
+        # except Exception as e:
+        #     print(e)
+        #     client.close()
+        #     run=False
+    # cv2.destroyWindow(nick)
     print(f"{nick} has errored, or logged out.")
 
 
@@ -657,23 +661,39 @@ def broadcast(msg, list=None):
     if list is None:
         list = clients
     deletes = []
+
+    def delete_bros(m, s):
+        try:
+            if len(m) > 50:
+                m = str(m[:50]) + '...'
+            print(f"Error in sending {m} to {s}")
+            deletes.append(s)
+        except ConnectionResetError:
+            pass
+        except ConnectionAbortedError:
+            pass
+
     for sock in list:
         try:
             sock.send(msg.encode())
         except AttributeError:
-            sock.send(msg)
-        except ConnectionResetError:  # 10054
             try:
-                print(f"Error in sending {msg} to {sock}")
-                deletes.append(sock)
-                pass
-            except ConnectionResetError:
-                continue
+                sock.send(msg)
+            except ConnectionResetError:  # 10054
+                delete_bros(msg, sock)
             except ConnectionAbortedError:
-                continue
+                delete_bros(msg, sock)
+        except ConnectionResetError:  # 10054
+            delete_bros(msg, sock)
+        except ConnectionAbortedError:
+            delete_bros(msg, sock)
+
     c = deletes.copy()
-    for i in range(len(c)):
-        kick(deletes[i], delete=True)
+    for i,so in enumerate(c):
+        if list == cameras:
+            del cameras[so]
+        else:
+            kick(deletes[i], delete=True)
 
 HOST = ""
 PORT = 45_000
