@@ -346,16 +346,10 @@ def receive_camera_data():
                 cv2.destroyWindow(nick)
             if cv2.waitKey(1) & 0xFF == ord('c'):
                 break
-        except ValueError:
+        except (ValueError, AttributeError, Exception):
             pass
-        except AttributeError:
-            pass
-        except ConnectionResetError:
+        except (ConnectionResetError, ConnectionAbortedError):
             break
-        except ConnectionAbortedError:
-            break
-        except Exception as e:
-            print(e)
     cv2.destroyAllWindows()
 
 
@@ -575,11 +569,7 @@ def receive(tk_obj, client_sock):
                 if test:
                     print("Error. Dumping data", test)
 
-        except OSError:
-            break  # Client has left the chat
-        except IndexError:
-            break  # Client has left the chat
-        except RuntimeError:
+        except (OSError, IndexError, RuntimeError):
             break  # Client has left the chat
 
         except Exception as e:  # if we get any other error it's bc you messed up not me

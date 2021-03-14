@@ -201,10 +201,8 @@ def kick(client, delete=True, cl=False, message=True, custom=""):
             del addresses[client]
             print(f"{len(clients.values())} Users remaining, with {len(cameras)} cameras active.")
 
-    except ConnectionResetError:
+    except (ConnectionResetError, Exception):
         pass
-    except Exception as E:
-        print(E)
 
     send_update(start_chain=True, end_chain=True)
 
@@ -334,9 +332,7 @@ def handle_command(data, client):
             # Number must be positive integer
             data = "Purged " + str(number) + " messages."
             return data, "NOBGCL"
-        except ValueError:
-            data = "usage_purge"
-        except IndexError:
+        except (ValueError, IndexError):
             data = "usage_purge"
 
     if command == "reminder":
@@ -552,11 +548,8 @@ def handle_client(client):  # Takes client sock as argument.
             banned_words_used += [x for x in names if name == x]
         print(f"{client}\n has registered as {name}")
 
-    except ConnectionResetError:  # 10054
+    except (ConnectionResetError, ConnectionAbortedError):  # 10054
         print("Client error'd out.")
-        del addresses[client]
-    except ConnectionAbortedError:
-        # user checking ports
         del addresses[client]
         pass
     except UnicodeDecodeError:
@@ -599,13 +592,7 @@ def handle_client(client):  # Takes client sock as argument.
                 if x == "006NormalNOBGCLquit()":
                     try:
                         kick(client, message=False, delete=True, cl=False)
-                    except ConnectionResetError:  # 10054
-                        print("Client did an oopsie")
-                        del clients[client]
-                    except ConnectionAbortedError:
-                        print("Client did an oopsie")
-                        del clients[client]
-                    except OSError:
+                    except (ConnectionResetError, ConnectionAbortedError, OSError):  # 10054
                         print("Client did an oopsie")
                         del clients[client]
                     except KeyError:
@@ -618,9 +605,7 @@ def handle_client(client):  # Takes client sock as argument.
                 print(
                     F"{'<ADMIN> ' if clients[client]['admin'] else ''}{clients[client]['nick']}: {data}" + '{0:>50}'.format(
                         F"({data.strip().split(' ')})"))
-            except ConnectionResetError:  # 10054
-                connection_working = False
-            except ConnectionAbortedError:
+            except (ConnectionResetError, ConnectionAbortedError):  # 10054
                 connection_working = False
 
             if connection_working and data != "quit()":
@@ -640,20 +625,12 @@ def handle_client(client):  # Takes client sock as argument.
             else:
                 try:
                     kick(client, message=False, delete=True, cl=False)
-                except ConnectionResetError:  # 10054
-                    print("Client did an oopsie")
-                    del clients[client]
-                except ConnectionAbortedError:
-                    print("Client did an oopsie")
-                    del clients[client]
-                except OSError:
+                except (ConnectionResetError, ConnectionAbortedError, OSError):  # 10054
                     print("Client did an oopsie")
                     del clients[client]
                 except KeyError:
                     print(f"Client is already gone.")
                 break
-        # except Exception as e:
-        #     print(f"An error has occured.\n{e}")
 
 
 def broadcast(msg, list=None):
@@ -668,9 +645,7 @@ def broadcast(msg, list=None):
                 m = str(m[:50]) + '...'
             print(f"Error in sending {m} to {s}")
             deletes.append(s)
-        except ConnectionResetError:
-            pass
-        except ConnectionAbortedError:
+        except (ConnectionResetError, ConnectionAbortedError):
             pass
 
     for sock in list:
@@ -679,13 +654,9 @@ def broadcast(msg, list=None):
         except AttributeError:
             try:
                 sock.send(msg)
-            except ConnectionResetError:  # 10054
+            except (ConnectionResetError, ConnectionAbortedError):  # 10054
                 delete_bros(msg, sock)
-            except ConnectionAbortedError:
-                delete_bros(msg, sock)
-        except ConnectionResetError:  # 10054
-            delete_bros(msg, sock)
-        except ConnectionAbortedError:
+        except (ConnectionResetError, ConnectionAbortedError):  # 10054
             delete_bros(msg, sock)
 
     c = deletes.copy()
