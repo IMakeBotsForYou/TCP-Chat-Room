@@ -4,6 +4,7 @@ from PIL import ImageTk, Image
 from pyperclip import copy
 from helper_functions import *
 import warnings
+
 warnings.filterwarnings("ignore")
 # ----Functionality---- #
 current_window = 0
@@ -93,6 +94,15 @@ def on_closing(tk_obj, messenger=None, event=None):
     and closes the window entirely if the current window is mode select
     """
     global current_window, mode
+
+    def leave():
+        if mode == "custom":
+            custom_server_select(tk_obj)
+            current_window = 2
+        else:
+            server_list(tk_obj)
+            current_window = 1
+
     # 0 = mode select
     # 1 = Server List mode select
     # 2 = CUSTOM mode select
@@ -107,17 +117,16 @@ def on_closing(tk_obj, messenger=None, event=None):
         if typing_my_name[0]:
             # Still writing name, so we can't send quit message.
             print("sentsds")
-            if mode == "custom":
-                custom_server_select(tk_obj)
-                current_window = 2
-            else:
-                server_list(tk_obj)
-                current_window = 1
+            leave()
         else:
             # Already wrote my name
-            camera["sock"].send("LEAVE".encode())
-            messenger.set("quit()")
-            send(messenger, tk_obj)
+            try:
+                camera["sock"].send("LEAVE".encode())
+                messenger.set("quit()")
+                send(messenger, tk_obj)
+            except:
+                leave()
+                pass
 
 
 def encrypt_few_words(msg, start=0, end=-1):
@@ -258,8 +267,8 @@ def send_camera_footage():
     available = get_available_devices()
     if len(available) > 0:
         cap = cv2.VideoCapture(available[0], cv2.CAP_DSHOW)
-        cap.set(3, 1000-(chatter_window["user_num_int"]*100))
-        cap.set(4, 1000-(chatter_window["user_num_int"]*100))
+        cap.set(3, 1000 - (chatter_window["user_num_int"] * 100))
+        cap.set(4, 1000 - (chatter_window["user_num_int"] * 100))
     else:
         sock.send("faild".encode())
         return
@@ -324,7 +333,7 @@ def receive_camera_data():
 
             data = sock.recv(frame_size)
             while len(data) < frame_size:
-                data += sock.recv(frame_size-len(data))
+                data += sock.recv(frame_size - len(data))
 
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             frame = np.frombuffer(data, dtype="uint8")
@@ -334,11 +343,17 @@ def receive_camera_data():
             cv2.imshow(nick, frame)
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.destroyWindow(nick)
+            if cv2.waitKey(1) & 0xFF == ord('c'):
                 break
         except ValueError:
             pass
         except AttributeError:
             pass
+        except ConnectionResetError:
+            break
+        except ConnectionAbortedError:
+            break
         except Exception as e:
             print(e)
     cv2.destroyAllWindows()
@@ -410,8 +425,10 @@ def handle_incoming_command(data, tk_obj):
         chatter_window['user_num_int'] = users_size
         chatter_window['user_num'].set(f'Users online: [{chatter_window["user_num_int"]}]')
         new_size = 1000
-        if cameras_size > 5: cameras_size = 200
-        else: cameras_size = 1000-(users_size*100)
+        if cameras_size > 5:
+            cameras_size = 200
+        else:
+            cameras_size = 1000 - (users_size * 100)
         camera["size"] = (new_size, new_size)
 
     elif data.find("Update members") != -1:
@@ -518,7 +535,8 @@ def receive(tk_obj, client_sock):
                                 try:
                                     msg_list.insert(tk.END, line)
                                     chatter_window['last_item'] += 1
-                                    msg_list.itemconfig(chatter_window['last_item'], bg=f'#{color}', fg=black_or_white(color))
+                                    msg_list.itemconfig(chatter_window['last_item'], bg=f'#{color}',
+                                                        fg=black_or_white(color))
                                 except tk.TclError:  # server closed
                                     pass
                                 if line.find(f'@{name}') != -1:
