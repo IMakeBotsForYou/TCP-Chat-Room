@@ -31,8 +31,8 @@ enc_vars = {
 camera = {
     "sock": socket(AF_INET, SOCK_STREAM),
     "thread": Thread(),
-    "size": (1000, 1000),
-    "current_cap": (1000, 1000),
+    "size": [1000, 1000],
+    "current_cap": [1000, 1000],
     "port": 0,
     "quality": 20,
     "displays": {}
@@ -275,6 +275,7 @@ def send_camera_footage():
     while current_window == 3:
         try:
             ret, frame = cap.read()
+
             if camera["size"] != camera["current_cap"]:
                 cap.set(3, camera["size"][0])
                 cap.set(4, camera["size"][1])
@@ -325,7 +326,9 @@ def receive_camera_data():
                 name_len = int(sock.recv(3).decode())
                 nick = sock.recv(name_len).decode()
                 cv2.destroyWindow(nick)
-
+            users_amount = int(sock.recv(2).decode())
+            dia = 1000-((users_amount-1)*100)
+            camera["size"] = [dia,dia]
             name_len = int(sock.recv(3).decode())
             nick = sock.recv(name_len).decode()
             diamensions = sock.recv(8)

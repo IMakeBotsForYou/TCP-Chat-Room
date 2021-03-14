@@ -52,6 +52,7 @@ command_list = ["Command List:",
                 "/time: show the server's time",
                 "/update_key: Force update your key",
                 "/reminder <seconds>: Remind you to talk after x seconds",
+                "/quality <percent>: Change your camera's quality",
                 "/login <password>: Try logging in as admin."]  # I do this so you can minimize the list
 command_list = "\n".join(command_list)
 # "/boot or /kick: kicks a user by username",
@@ -240,7 +241,7 @@ def handle_camera(client, address):
             continue
 
         # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-        nick_header = f"{msg_len(nick, 3)}{nick}".encode()
+        nick_header = f"{msg_len(cameras,2)}{msg_len(nick, 3)}{nick}".encode()
         diamensions_header = client.recv(8).decode()
         frame_size_s = client.recv(8).decode()
         frame_size = int(frame_size_s)
@@ -324,6 +325,7 @@ def handle_command(data, client):
             data = "usage_quality"
         else:
             return f"camera_quality|{args[1]}|", colours['pink']
+
     if command == "purge":
         try:
             number = int(args[1])
