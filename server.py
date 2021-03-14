@@ -227,7 +227,6 @@ def handle_camera(client, address):
     global port
     nick = F"{address[0]}:{address[1]}"
     run = True
-    display = True
     while run:
         try:
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -250,11 +249,11 @@ def handle_camera(client, address):
                 data += client.recv(frame_size - len(data))
 
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-            if display:
-                frame = np.frombuffer(data, dtype="uint8")
-                frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-                frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
-                cv2.imshow(nick, frame)
+            # if display:
+            #     frame = np.frombuffer(data, dtype="uint8")
+            #     frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+            #     frame.resize((int(diamensions_header[:4]), int(diamensions_header[4:]), 3))
+            #     cv2.imshow(nick, frame)
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
             data = nick_header + (diamensions_header + msg_len(data, 8)).encode() + data
@@ -264,6 +263,7 @@ def handle_camera(client, address):
                 display=False
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         except:
+            print("Displayed")
             run=False
     cv2.destroyWindow(nick)
     print(f"{nick} has errored, or logged out.")
@@ -280,7 +280,7 @@ def send_update(start_chain, end_chain):
     chain = "SysCmd" if start_chain else ""
 
     # Start, or continue existing chain with number of users
-    data = f"Update user_num,{str(len(clients.values())).zfill(2)}"
+    data = f"Update user_num,{str(len(clients.values())).zfill(2)}|{str(len(clients.values())).zfill(2)}"
     header = msg_len(data) + colours['white'] + "0"
     chain += header + data
 
@@ -656,6 +656,7 @@ def broadcast(msg, list=None):
     """Broadcasts a message to all the clients."""
     if list is None:
         list = clients
+    deletes = []
     for sock in list:
         try:
             sock.send(msg.encode())
@@ -664,12 +665,15 @@ def broadcast(msg, list=None):
         except ConnectionResetError:  # 10054
             try:
                 print(f"Error in sending {msg} to {sock}")
+                deletes.append(sock)
                 pass
             except ConnectionResetError:
                 continue
             except ConnectionAbortedError:
                 continue
-
+    c = deletes.copy()
+    for i in range(len(c)):
+        kick(deletes[i], delete=True)
 
 HOST = ""
 PORT = 45_000

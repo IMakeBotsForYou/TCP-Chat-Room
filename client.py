@@ -30,8 +30,10 @@ enc_vars = {
 camera = {
     "sock": socket(AF_INET, SOCK_STREAM),
     "thread": Thread(),
+    "size": (1000, 1000),
+    "current_cap": (1000, 1000),
     "port": 0,
-    "quality": 25,
+    "quality": 20,
     "displays": {}
 }
 load_servers = None
@@ -256,20 +258,23 @@ def send_camera_footage():
     available = get_available_devices()
     if len(available) > 0:
         cap = cv2.VideoCapture(available[0], cv2.CAP_DSHOW)
-        cap.set(3, 400)
-        cap.set(4, 400)
+        cap.set(3, 1000-(chatter_window["user_num_int"]*100))
+        cap.set(4, 1000-(chatter_window["user_num_int"]*100))
     else:
         sock.send("faild".encode())
         return
     while current_window == 3:
         try:
             ret, frame = cap.read()
+            if camera["size"] != camera["current_cap"]:
+                cap.set(3, camera["size"][0])
+                cap.set(4, camera["size"][1])
+                camera["current_cap"] = camera["size"]
             size = frame.shape
-            if camera["quality"] in [25, 15, 7]:
-                quality = 20
-                if 6 > chatter_window["user_num_int"] > 3:
-                    quality = 15
-                elif chatter_window["user_num_int"] >= 6:
+
+            if camera["quality"] in [15, 7]:
+                quality = 7
+                if chatter_window["user_num_int"] >= 3:
                     quality = 5
                 camera["quality"] = quality
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), camera["quality"]]
@@ -324,6 +329,7 @@ def receive_camera_data():
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
             frame = np.frombuffer(data, dtype="uint8")
             frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+            # frame = cv2.imdecode(frame, cv2.IMREAD_GRAYSCALE)
             frame.resize((int(diamensions[:4]), int(diamensions[4:]), 3))
             cv2.imshow(nick, frame)
             # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -400,8 +406,13 @@ def handle_incoming_command(data, tk_obj):
         typing_my_name[0] = False
 
     elif data.find("Update user_num") != -1:
-        chatter_window['user_num_int'] = int(data[data.find(",") + 1:])
+        users_size, cameras_size = [int(x) for x in data[data.find(",") + 1:].split("|")]
+        chatter_window['user_num_int'] = users_size
         chatter_window['user_num'].set(f'Users online: [{chatter_window["user_num_int"]}]')
+        new_size = 1000
+        if cameras_size > 5: cameras_size = 200
+        else: cameras_size = 1000-(users_size*100)
+        camera["size"] = (new_size, new_size)
 
     elif data.find("Update members") != -1:
         members = data[14:].split("+")
@@ -823,7 +834,7 @@ def chat_room(tk_obj):
     users_list = tk.Listbox(online_users, height=100, width=17, yscrollcommand=scrollbar1.set, background="#2c2f33",
                             foreground="white")
 
-    online_text = tk.Label(online_users, text="Users Online", textvariable=online_num)
+    online_text = tk.Label(online_users, text="Users online: [Loading...]", textvariable=chatter_window['user_num'])
     # online_text.pack(side="top", fill="both")
     # users_list.pack(side="left", fill="both")
     users_list.grid(row=1, column=0, sticky="ewns")
