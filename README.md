@@ -1,6 +1,7 @@
 ~~[Proper HTML](http://tcp-chat-docs.herokuapp.com)~~
 Website is down.
 
+Since the Heroku service is no longer free, service for this app is currently down.
 
 <!DOCTYPE html>
 <html style="font-size: 16px;">
