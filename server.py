@@ -354,7 +354,7 @@ def handle_command(data, client):
 
             last_update, KEY = retrieve_key(last_update, KEY)
             passw = encode(''.join(args[1:]), KEY)
-            admin_pass = req.get("https://get-api-key-2021.herokuapp.com/").json()['pass']
+            admin_pass = get_password()
             clients[client][1] = passw == admin_pass
             success = passw == admin_pass
             # Decode what the user has sent.
