@@ -1,3 +1,3 @@
 <?php
-include_once("Home-Page.html");
+include_once("index.html");
 ?>
