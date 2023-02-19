@@ -1,7 +1,4 @@
-~~[Proper HTML](http://tcp-chat-docs.herokuapp.com)~~
-Website is down.
-
-Since the Heroku service is no longer free, service for this app is currently down.
+[Proper HTML](https://imakebotsforyou.github.io/TCP-Chat-Room/)
 
 <!DOCTYPE html>
 <html style="font-size: 16px;">
